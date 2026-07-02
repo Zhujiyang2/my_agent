@@ -9,7 +9,7 @@
     "start": "node --import tsx bin/my-agent.ts"
   },
   "bin": {
-    "my_agent": "./bin/my-agent.ts"
+    "my_agent": "./bin/my-agent.js"
   },
   "devDependencies": {
     "@types/node": "^24.13.2",
