@@ -9,7 +9,6 @@ import { createAgent } from '../src/agent/loop';
 import {
   isExitCommand,
   formatWelcome,
-  formatUserMessage,
   formatError,
   formatInfo,
 } from '../src/cli/chat';
@@ -74,8 +73,6 @@ async function main(): Promise<void> {
       rl.prompt();
       return;
     }
-
-    console.log(formatUserMessage(input));
 
     currentController = new AbortController();
 
