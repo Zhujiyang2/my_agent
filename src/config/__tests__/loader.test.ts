@@ -19,7 +19,7 @@ describe('loadConfig', () => {
   });
 
   it('throws when config file does not exist', () => {
-    expect(() => loadConfig(TEST_CONFIG_FILE)).toThrow(/not found|ENOENT|config/i);
+    expect(() => loadConfig(TEST_CONFIG_FILE)).toThrow(/not found/i);
   });
 
   it('successfully loads a valid config file', () => {
@@ -32,21 +32,42 @@ describe('loadConfig', () => {
 
   it('throws on malformed JSON', () => {
     fs.writeFileSync(TEST_CONFIG_FILE, '{ not json }');
-    expect(() => loadConfig(TEST_CONFIG_FILE)).toThrow();
+    expect(() => loadConfig(TEST_CONFIG_FILE)).toThrow(/Invalid JSON/i);
+  });
+
+  it('throws on JSON array instead of object', () => {
+    fs.writeFileSync(TEST_CONFIG_FILE, '[1, 2, 3]');
+    expect(() => loadConfig(TEST_CONFIG_FILE)).toThrow(/JSON object/i);
   });
 
   it('throws when api_url is missing', () => {
     fs.writeFileSync(TEST_CONFIG_FILE, JSON.stringify({ model: 'm', api_key: 'k' }));
-    expect(() => loadConfig(TEST_CONFIG_FILE)).toThrow(/api_url/);
+    expect(() => loadConfig(TEST_CONFIG_FILE)).toThrow(/missing.*api_url/i);
   });
 
   it('throws when model is missing', () => {
     fs.writeFileSync(TEST_CONFIG_FILE, JSON.stringify({ api_url: 'u', api_key: 'k' }));
-    expect(() => loadConfig(TEST_CONFIG_FILE)).toThrow(/model/);
+    expect(() => loadConfig(TEST_CONFIG_FILE)).toThrow(/missing.*model/i);
   });
 
   it('throws when api_key is missing', () => {
     fs.writeFileSync(TEST_CONFIG_FILE, JSON.stringify({ api_url: 'u', model: 'm' }));
-    expect(() => loadConfig(TEST_CONFIG_FILE)).toThrow(/api_key/);
+    expect(() => loadConfig(TEST_CONFIG_FILE)).toThrow(/missing.*api_key/i);
+  });
+
+  it('throws when a field has wrong type', () => {
+    fs.writeFileSync(TEST_CONFIG_FILE, JSON.stringify({ api_url: 123, model: 'm', api_key: 'k' }));
+    expect(() => loadConfig(TEST_CONFIG_FILE)).toThrow(/must be a string/);
+  });
+
+  it('loads config from default path (~/.my_agent/config.json)', () => {
+    // When no filePath is given, loadConfig uses the real ~/.my_agent/config.json
+    const result = loadConfig();
+    expect(result).toHaveProperty('api_url');
+    expect(result).toHaveProperty('model');
+    expect(result).toHaveProperty('api_key');
+    expect(typeof result.api_url).toBe('string');
+    expect(typeof result.model).toBe('string');
+    expect(typeof result.api_key).toBe('string');
   });
 });

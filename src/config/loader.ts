@@ -22,17 +22,28 @@ export function loadConfig(filePath?: string): Config {
     throw new Error(`Invalid JSON in config file: ${resolvedPath}`);
   }
 
+  if (typeof config !== 'object' || config === null || Array.isArray(config)) {
+    throw new Error(`Config file must contain a JSON object: ${resolvedPath}`);
+  }
+
   const cfg = config as Record<string, unknown>;
 
-  if (!cfg.api_url || typeof cfg.api_url !== 'string') {
-    throw new Error('Config is missing required field: api_url');
+  function validateStringField(field: string): string {
+    const value = cfg[field];
+    if (value === undefined || value === null || value === '') {
+      throw new Error(`Config is missing required field: ${field}`);
+    }
+    if (typeof value !== 'string') {
+      throw new Error(`Config field '${field}' must be a string, got ${typeof value}`);
+    }
+    return value;
   }
-  if (!cfg.model || typeof cfg.model !== 'string') {
-    throw new Error('Config is missing required field: model');
-  }
-  if (!cfg.api_key || typeof cfg.api_key !== 'string') {
-    throw new Error('Config is missing required field: api_key');
-  }
+
+  return {
+    api_url: validateStringField('api_url'),
+    model: validateStringField('model'),
+    api_key: validateStringField('api_key'),
+  };
 
   return { api_url: cfg.api_url, model: cfg.model, api_key: cfg.api_key };
 }
