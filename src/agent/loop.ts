@@ -1,0 +1,38 @@
+// src/agent/loop.ts
+import type { Config } from '../config/types';
+import type { Message } from '../llm/types';
+import { chatStream } from '../llm/client';
+
+export interface AgentOptions {
+  /** Called for each token received from the LLM. */
+  onToken?: (token: string) => void;
+}
+
+export interface AgentSession {
+  /** Send a user message, stream the assistant response, return the full reply. */
+  send(input: string, signal?: AbortSignal): Promise<string>;
+  /** Snapshot of current conversation history. */
+  readonly history: ReadonlyArray<Message>;
+}
+
+export function createAgent(config: Config, options: AgentOptions = {}): AgentSession {
+  const history: Message[] = [];
+
+  async function send(input: string, signal?: AbortSignal): Promise<string> {
+    history.push({ role: 'user', content: input });
+
+    let full = '';
+    await chatStream(config, [...history], (token) => {
+      full += token;
+      options.onToken?.(token);
+    }, signal);
+
+    history.push({ role: 'assistant', content: full });
+    return full;
+  }
+
+  return {
+    send,
+    get history() { return [...history]; },
+  };
+}
