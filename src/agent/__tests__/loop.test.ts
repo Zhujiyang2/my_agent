@@ -89,4 +89,27 @@ describe('createAgent', () => {
     await agent.send('hello');
     expect(tokens).toEqual(['H', 'i']);
   });
+
+  it('does not mutate history when chatStream fails', async () => {
+    mockedChatStream.mockRejectedValueOnce(new Error('Network error'));
+
+    const agent = createAgent(TEST_CONFIG);
+
+    await expect(agent.send('boom')).rejects.toThrow('Network error');
+
+    // History must remain empty — no orphaned user message
+    expect(agent.history).toEqual([]);
+
+    // Subsequent send should still work
+    mockedChatStream.mockImplementationOnce(async (_c, _m, onToken) => {
+      onToken('recovered');
+    });
+
+    const reply = await agent.send('retry');
+    expect(reply).toBe('recovered');
+    expect(agent.history).toEqual([
+      { role: 'user', content: 'retry' },
+      { role: 'assistant', content: 'recovered' },
+    ]);
+  });
 });

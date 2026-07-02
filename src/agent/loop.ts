@@ -19,14 +19,18 @@ export function createAgent(config: Config, options: AgentOptions = {}): AgentSe
   const history: Message[] = [];
 
   async function send(input: string, signal?: AbortSignal): Promise<string> {
-    history.push({ role: 'user', content: input });
+    // Build request messages without mutating history — if chatStream fails,
+    // history must remain unchanged so subsequent sends see a valid state.
+    const requestMessages: Message[] = [...history, { role: 'user', content: input }];
 
     let full = '';
-    await chatStream(config, [...history], (token) => {
+    await chatStream(config, requestMessages, (token) => {
       full += token;
       options.onToken?.(token);
     }, signal);
 
+    // Only commit after success
+    history.push({ role: 'user', content: input });
     history.push({ role: 'assistant', content: full });
     return full;
   }
