@@ -118,7 +118,7 @@ describe('chatStream', () => {
     );
     global.fetch = fetchMock;
 
-    const promise = chatStream(TEST_CONFIG, TEST_MESSAGES, (token) => {}, controller.signal);
+    const promise = chatStream(TEST_CONFIG, TEST_MESSAGES, (_token) => {}, controller.signal);
     controller.abort();
     await expect(promise).rejects.toThrow(/abort/i);
   });

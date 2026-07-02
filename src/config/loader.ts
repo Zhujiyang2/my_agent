@@ -36,7 +36,7 @@ export function loadConfig(filePath?: string): Config {
     if (typeof value !== 'string') {
       throw new Error(`Config field '${field}' must be a string, got ${typeof value}`);
     }
-    return value;
+    return value as string;
   }
 
   return {
@@ -44,6 +44,4 @@ export function loadConfig(filePath?: string): Config {
     model: validateStringField('model'),
     api_key: validateStringField('api_key'),
   };
-
-  return { api_url: cfg.api_url, model: cfg.model, api_key: cfg.api_key };
 }
