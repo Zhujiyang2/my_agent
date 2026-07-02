@@ -105,4 +105,21 @@ describe('chatStream', () => {
 
     expect(tokens).toEqual(['ok']);
   });
+
+  it('rejects when the abort signal is triggered', async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn().mockImplementation(
+      (_url: string, opts?: RequestInit) =>
+        new Promise((_, reject) => {
+          opts?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('The operation was aborted.', 'AbortError'))
+          );
+        })
+    );
+    global.fetch = fetchMock;
+
+    const promise = chatStream(TEST_CONFIG, TEST_MESSAGES, (token) => {}, controller.signal);
+    controller.abort();
+    await expect(promise).rejects.toThrow(/abort/i);
+  });
 });

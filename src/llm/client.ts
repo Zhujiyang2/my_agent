@@ -1,6 +1,6 @@
 // src/llm/client.ts
 import type { Config } from '../config/types';
-import type { Message } from './types';
+import type { Message, ChatCompletionChunk } from './types';
 
 export async function chatStream(
   config: Config,
@@ -51,9 +51,9 @@ export async function chatStream(
       if (data === '[DONE]') return;
 
       try {
-        const parsed = JSON.parse(data);
+        const parsed = JSON.parse(data) as ChatCompletionChunk;
         const content = parsed.choices?.[0]?.delta?.content;
-        if (content && content.length > 0) onToken(content);
+        if (content) onToken(content);
       } catch {
         // skip unparseable lines
       }
