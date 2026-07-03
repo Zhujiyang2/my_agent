@@ -48,8 +48,10 @@ export async function chatStream(
   let buffer = '';
 
   let content = '';
+  let finishReason = 'stop';
   const toolCallMap = new Map<number, ToolCall>();
 
+  let streamDone = false;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -63,12 +65,19 @@ export async function chatStream(
       if (!trimmed || !trimmed.startsWith('data: ')) continue;
 
       const data = trimmed.slice(6);
-      if (data === '[DONE]') break;
+      if (data === '[DONE]') {
+        streamDone = true;
+        break;
+      }
 
       try {
         const parsed = JSON.parse(data) as ChatCompletionChunk;
         const choice = parsed.choices?.[0];
         if (!choice) continue;
+
+        if (choice.finish_reason) {
+          finishReason = choice.finish_reason;
+        }
 
         const token = choice.delta?.content;
         if (token) {
@@ -100,11 +109,13 @@ export async function chatStream(
         // skip unparseable lines
       }
     }
+
+    if (streamDone) break;
   }
 
   const toolCalls = Array.from(toolCallMap.entries())
     .sort(([a], [b]) => a - b)
     .map(([, tc]) => tc);
 
-  return { finishReason: 'stop', content, toolCalls };
+  return { finishReason, content, toolCalls };
 }

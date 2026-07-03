@@ -33,7 +33,9 @@ export const runCommandTool: ToolDefinition = {
         timeout: timeoutMs,
         encoding: 'utf-8',
         stdio: ['ignore', 'pipe', 'pipe'],
-        shell: process.env.ComSpec || 'cmd.exe',
+        shell: process.platform === 'win32'
+          ? (process.env.ComSpec || 'cmd.exe')
+          : (process.env.SHELL || '/bin/sh'),
       });
       return { content: stdout.trim() ? stdout.trim() + '\nexit code: 0' : 'exit code: 0' };
     } catch (e: unknown) {

@@ -20,6 +20,7 @@ const TEST_CONFIG: Config = {
   api_key: 'sk-test',
   tools: {
     max_loop_rounds: 10,
+    max_consecutive_failures: 3,
     command_timeout: 60,
     background_timeout: 0,
   },
@@ -164,6 +165,45 @@ describe('createAgent', () => {
     await expect(agent.send('infinite loop')).rejects.toThrow(/Exceeded maximum/);
   });
 
+  it('preserves partial history when max rounds exceeded (not rolled back)', async () => {
+    createEchoTool(registry);
+
+    mockedChatStream.mockResolvedValue(makeToolCallResult('echo', { message: 'loop' }));
+
+    const agent = createAgent(TEST_CONFIG, { registry });
+    await expect(agent.send('infinite loop')).rejects.toThrow(/Exceeded maximum/);
+
+    // History should retain the partial conversation for debugging
+    expect(agent.history.length).toBeGreaterThan(0);
+    expect(agent.history[0].role).toBe('user');
+  });
+
+  it('error message includes round count and last tool name', async () => {
+    createEchoTool(registry);
+
+    mockedChatStream.mockResolvedValue(makeToolCallResult('echo', { message: 'loop' }));
+
+    const agent = createAgent(TEST_CONFIG, { registry });
+    await expect(agent.send('infinite loop')).rejects.toThrow(/last tool: echo/);
+  });
+
+  it('calls onToolCall callback for each tool execution', async () => {
+    createEchoTool(registry);
+
+    mockedChatStream
+      .mockResolvedValueOnce(makeToolCallResult('echo', { message: 'hello' }, 'call_1'))
+      .mockResolvedValueOnce(makeTextResult('ok'));
+
+    const toolCalls: string[] = [];
+    const agent = createAgent(TEST_CONFIG, {
+      registry,
+      onToolCall: (name, _args) => toolCalls.push(name),
+    });
+    await agent.send('say hello');
+
+    expect(toolCalls).toEqual(['echo']);
+  });
+
   it('continues after tool execution error', async () => {
     // Register a tool that throws
     registry.register({
@@ -204,5 +244,68 @@ describe('createAgent', () => {
     await agent.send('hi');
 
     expect(mockedChatStream.mock.calls[0][2]).toBeUndefined();
+  });
+
+  it('stops after max_consecutive_failures is reached', async () => {
+    // Register a tool that always fails
+    registry.register({
+      name: 'flaky',
+      description: 'Always fails',
+      parameters: { type: 'object', properties: {}, required: [] },
+      handler: async () => ({ content: 'fail', isError: true }),
+    });
+
+    // LLM keeps retrying the flaky tool
+    mockedChatStream.mockResolvedValue(makeToolCallResult('flaky', {}));
+
+    const agent = createAgent(TEST_CONFIG, { registry });
+    await expect(agent.send('use flaky tool')).rejects.toThrow(/consecutive tool failures/);
+  });
+
+  it('resets consecutive failure counter on successful tool call', async () => {
+    // Register tools: one flaky, one reliable
+    registry.register({
+      name: 'flaky',
+      description: 'Sometimes fails',
+      parameters: { type: 'object', properties: {}, required: [] },
+      handler: async () => ({ content: 'fail', isError: true }),
+    });
+    createEchoTool(registry);
+
+    // Round 1: flaky fails
+    mockedChatStream.mockResolvedValueOnce(makeToolCallResult('flaky', {}, 'call_1'));
+    // Round 2: echo succeeds → resets counter
+    mockedChatStream.mockResolvedValueOnce(makeToolCallResult('echo', { message: 'ok' }, 'call_2'));
+    // Round 3: flaky fails again (counter = 1, not 3)
+    mockedChatStream.mockResolvedValueOnce(makeToolCallResult('flaky', {}, 'call_3'));
+    // Round 4: flaky fails again (counter = 2)
+    mockedChatStream.mockResolvedValueOnce(makeToolCallResult('flaky', {}, 'call_4'));
+    // Round 5: flaky fails again (counter = 3 → stop)
+    mockedChatStream.mockResolvedValueOnce(makeToolCallResult('flaky', {}, 'call_5'));
+
+    const agent = createAgent(TEST_CONFIG, { registry });
+    await expect(agent.send('test reset')).rejects.toThrow(/consecutive tool failures/);
+
+    // Counter was reset after echo succeeded in round 2,
+    // so flaky needed 3 more consecutive failures (rounds 3,4,5) to stop.
+    expect(mockedChatStream).toHaveBeenCalledTimes(5);
+  });
+
+  it('preserves history when stopped by consecutive failures', async () => {
+    registry.register({
+      name: 'flaky',
+      description: 'Always fails',
+      parameters: { type: 'object', properties: {}, required: [] },
+      handler: async () => ({ content: 'fail', isError: true }),
+    });
+
+    mockedChatStream.mockResolvedValue(makeToolCallResult('flaky', {}));
+
+    const agent = createAgent(TEST_CONFIG, { registry });
+    await expect(agent.send('use flaky')).rejects.toThrow(/consecutive tool failures/);
+
+    // History should be preserved for debugging
+    expect(agent.history.length).toBeGreaterThan(0);
+    expect(agent.history[0].role).toBe('user');
   });
 });
