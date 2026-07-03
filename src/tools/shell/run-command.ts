@@ -33,7 +33,7 @@ export const runCommandTool: ToolDefinition = {
         timeout: timeoutMs,
         encoding: 'utf-8',
         stdio: ['ignore', 'pipe', 'pipe'],
-        shell: true,
+        shell: process.env.ComSpec || 'cmd.exe',
       });
       return { content: stdout.trim() ? stdout.trim() + '\nexit code: 0' : 'exit code: 0' };
     } catch (e: unknown) {
@@ -41,6 +41,7 @@ export const runCommandTool: ToolDefinition = {
         stdout?: Buffer | string;
         stderr?: Buffer | string;
         status?: number;
+        killed?: boolean;
       };
 
       if (err.killed) {

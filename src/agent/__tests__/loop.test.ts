@@ -51,7 +51,7 @@ function createEchoTool(registry: ToolRegistry): ToolDefinition {
       properties: { message: { type: 'string', description: 'Message to echo' } },
       required: ['message'],
     },
-    handler: async (params) => ({ content: `echo: ${params.message}` }),
+    handler: async (params: Record<string, unknown>) => ({ content: `echo: ${params.message}` }),
   };
   registry.register(tool);
   return tool;
@@ -193,7 +193,7 @@ describe('createAgent', () => {
     const agent = createAgent(TEST_CONFIG, { registry });
     await agent.send('hi');
 
-    const toolsArg = mockedChatStream.mock.calls[0][2];
+    const toolsArg = mockedChatStream.mock.calls[0][2] as Array<{ function: { name: string } }> | undefined;
     expect(toolsArg).toBeDefined();
     expect(toolsArg![0].function.name).toBe('echo');
   });

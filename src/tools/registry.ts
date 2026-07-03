@@ -1,6 +1,8 @@
 // src/tools/registry.ts
 import type { ToolDefinition } from './types';
 
+export type { ToolDefinition };
+
 export interface ToolRegistry {
   register(tool: ToolDefinition): void;
   get(name: string): ToolDefinition | undefined;

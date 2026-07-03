@@ -13,6 +13,26 @@ import {
   formatInfo,
 } from '../src/cli/chat';
 
+// Load tools — side-effect imports trigger registration into defaultRegistry
+import '../src/tools/shell/index.js';
+import '../src/tools/files/index.js';
+import { setExecutorCallbacks } from '../src/tools/executor.js';
+import { promptConfirm } from '../src/cli/chat.js';
+
+// Set up safety confirmation for high-risk commands
+setExecutorCallbacks({
+  onConfirm: async (command: string, category: string) => {
+    process.stdout.write(promptConfirm(command, category) + '\n');
+    return new Promise((resolve) => {
+      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+      rl.question('> ', (answer) => {
+        rl.close();
+        resolve(answer.trim().toLowerCase().startsWith('y'));
+      });
+    });
+  },
+});
+
 const nodeVersion = process.versions.node.split('.').map(Number);
 if (nodeVersion[0] < 18) {
   console.error(formatError(`  Error: Node.js >= 18 required (current: ${process.version})`));
@@ -32,6 +52,7 @@ async function main(): Promise<void> {
   console.log(formatWelcome());
   console.log(formatInfo(`  Model: ${config.model}`));
   console.log(formatInfo(`  API: ${config.api_url}`));
+  console.log(formatInfo(`  Safety: ${config.tools.safety_mode === 'confirm' ? 'high-risk confirmation ON' : 'auto-approve all'}`));
   console.log(formatInfo('  /exit to quit | Ctrl+C to interrupt | Ctrl+C twice to exit'));
   console.log('');
 
