@@ -1,8 +1,8 @@
 // src/context/__tests__/multi-round-scenarios.test.ts
 // Comprehensive multi-round tool-call scenario tests for Context Management V2
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { createContextManager } from '../manager';
-import type { ContextManager, ContextConfig } from '../types';
+import type { ContextConfig } from '../types';
 import type { Message } from '../../llm/types';
 
 const DEFAULT_CONFIG: ContextConfig = {
