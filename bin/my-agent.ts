@@ -17,8 +17,10 @@ import {
 // Load tools — side-effect imports trigger registration into defaultRegistry
 import '../src/tools/shell/index.js';
 import '../src/tools/files/index.js';
+import '../src/tools/subagent/index.js';
 import { setExecutorCallbacks } from '../src/tools/executor.js';
 import { promptConfirm } from '../src/cli/chat.js';
+import { SubagentManager, setSubagentManager } from '../src/agent/subagent/manager.js';
 
 const nodeVersion = process.versions.node.split('.').map(Number);
 if (nodeVersion[0] < 18) {
@@ -70,6 +72,10 @@ async function main(): Promise<void> {
       });
     });
   }
+
+  // Initialize subagent manager
+  const subagentManager = new SubagentManager(config);
+  setSubagentManager(subagentManager);
 
   // Set up safety confirmation — must be after rl creation
   setExecutorCallbacks({
@@ -125,6 +131,7 @@ async function main(): Promise<void> {
   });
 
   rl.on('close', () => {
+    subagentManager.destroy();
     process.exit(0);
   });
 }
