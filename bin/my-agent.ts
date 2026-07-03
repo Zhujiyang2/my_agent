@@ -19,20 +19,6 @@ import '../src/tools/files/index.js';
 import { setExecutorCallbacks } from '../src/tools/executor.js';
 import { promptConfirm } from '../src/cli/chat.js';
 
-// Set up safety confirmation for high-risk commands
-setExecutorCallbacks({
-  onConfirm: async (command: string, category: string) => {
-    process.stdout.write(promptConfirm(command, category) + '\n');
-    return new Promise((resolve) => {
-      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-      rl.question('> ', (answer) => {
-        rl.close();
-        resolve(answer.trim().toLowerCase().startsWith('y'));
-      });
-    });
-  },
-});
-
 const nodeVersion = process.versions.node.split('.').map(Number);
 if (nodeVersion[0] < 18) {
   console.error(formatError(`  Error: Node.js >= 18 required (current: ${process.version})`));
@@ -63,6 +49,20 @@ async function main(): Promise<void> {
     input: process.stdin,
     output: process.stdout,
     prompt: '\x1b[36m> \x1b[0m',
+  });
+
+  // Set up safety confirmation — has access to rl for pause/resume
+  setExecutorCallbacks({
+    onConfirm: async (command: string, category: string) => {
+      process.stdout.write(promptConfirm(command, category) + '\n');
+      return new Promise((resolve) => {
+        rl.pause();
+        rl.question('> ', (answer) => {
+          resolve(answer.trim().toLowerCase().startsWith('y'));
+          rl.resume();
+        });
+      });
+    },
   });
 
   rl.prompt();
