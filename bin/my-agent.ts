@@ -13,6 +13,12 @@ import {
   formatInfo,
 } from '../src/cli/chat';
 
+// Load tools — side-effect imports trigger registration into defaultRegistry
+import '../src/tools/shell/index.js';
+import '../src/tools/files/index.js';
+import { setExecutorCallbacks } from '../src/tools/executor.js';
+import { promptConfirm } from '../src/cli/chat.js';
+
 const nodeVersion = process.versions.node.split('.').map(Number);
 if (nodeVersion[0] < 18) {
   console.error(formatError(`  Error: Node.js >= 18 required (current: ${process.version})`));
@@ -48,6 +54,26 @@ async function main(): Promise<void> {
   rl.prompt();
 
   let currentController: AbortController | null = null;
+  let confirming = false;
+
+  // Safely read a single confirmation line — bypasses readline 'line' events
+  function readConfirmation(): Promise<boolean> {
+    return new Promise((resolve) => {
+      confirming = true;
+      rl.question('> ', (answer) => {
+        confirming = false;
+        resolve(answer.trim().toLowerCase().startsWith('y'));
+      });
+    });
+  }
+
+  // Set up safety confirmation — must be after rl creation
+  setExecutorCallbacks({
+    onConfirm: async (command: string, category: string) => {
+      process.stdout.write(promptConfirm(command, category) + '\n');
+      return readConfirmation();
+    },
+  });
 
   rl.on('SIGINT', () => {
     if (currentController) {
@@ -62,6 +88,7 @@ async function main(): Promise<void> {
   });
 
   rl.on('line', async (line: string) => {
+    if (confirming) return;
     if (isExitCommand(line)) {
       console.log(formatInfo('  Goodbye!\n'));
       rl.close();

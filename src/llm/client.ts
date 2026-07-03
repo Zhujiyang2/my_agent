@@ -1,14 +1,30 @@
 // src/llm/client.ts
 import type { Config } from '../config/types';
-import type { Message, ChatCompletionChunk } from './types';
+import type { Message, ChatCompletionChunk, ToolCall } from './types';
+
+export interface StreamResult {
+  finishReason: string;
+  content: string;
+  toolCalls: ToolCall[];
+}
 
 export async function chatStream(
   config: Config,
   messages: Message[],
+  tools: Array<Record<string, unknown>> | undefined,
   onToken: (token: string) => void,
   signal?: AbortSignal,
-): Promise<void> {
+): Promise<StreamResult> {
   const url = `${config.api_url}/chat/completions`;
+
+  const body: Record<string, unknown> = {
+    model: config.model,
+    messages,
+    stream: true,
+  };
+  if (tools && tools.length > 0) {
+    body.tools = tools;
+  }
 
   const response = await fetch(url, {
     method: 'POST',
@@ -16,17 +32,13 @@ export async function chatStream(
       'Content-Type': 'application/json',
       Authorization: `Bearer ${config.api_key}`,
     },
-    body: JSON.stringify({
-      model: config.model,
-      messages,
-      stream: true,
-    }),
+    body: JSON.stringify(body),
     signal,
   });
 
   if (!response.ok) {
-    const body = await response.text().catch(() => '<unreadable>');
-    throw new Error(`API request failed (${response.status}): ${body}`);
+    const errorBody = await response.text().catch(() => '<unreadable>');
+    throw new Error(`API request failed (${response.status}): ${errorBody}`);
   }
 
   const reader = response.body?.getReader();
@@ -34,6 +46,9 @@ export async function chatStream(
 
   const decoder = new TextDecoder();
   let buffer = '';
+
+  let content = '';
+  const toolCallMap = new Map<number, ToolCall>();
 
   while (true) {
     const { done, value } = await reader.read();
@@ -48,15 +63,48 @@ export async function chatStream(
       if (!trimmed || !trimmed.startsWith('data: ')) continue;
 
       const data = trimmed.slice(6);
-      if (data === '[DONE]') return;
+      if (data === '[DONE]') break;
 
       try {
         const parsed = JSON.parse(data) as ChatCompletionChunk;
-        const content = parsed.choices?.[0]?.delta?.content;
-        if (content) onToken(content);
+        const choice = parsed.choices?.[0];
+        if (!choice) continue;
+
+        const token = choice.delta?.content;
+        if (token) {
+          content += token;
+          onToken(token);
+        }
+
+        const deltas = choice.delta?.tool_calls;
+        if (deltas) {
+          for (const delta of deltas) {
+            const existing = toolCallMap.get(delta.index);
+            if (existing) {
+              if (delta.function?.arguments) {
+                existing.function.arguments += delta.function.arguments;
+              }
+            } else if (delta.id) {
+              toolCallMap.set(delta.index, {
+                id: delta.id,
+                type: 'function',
+                function: {
+                  name: delta.function?.name ?? '',
+                  arguments: delta.function?.arguments ?? '',
+                },
+              });
+            }
+          }
+        }
       } catch {
         // skip unparseable lines
       }
     }
   }
+
+  const toolCalls = Array.from(toolCallMap.entries())
+    .sort(([a], [b]) => a - b)
+    .map(([, tc]) => tc);
+
+  return { finishReason: 'stop', content, toolCalls };
 }

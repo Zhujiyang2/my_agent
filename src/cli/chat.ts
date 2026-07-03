@@ -39,3 +39,12 @@ export function formatError(content: string): string {
 export function formatInfo(content: string): string {
   return `\x1b[90m${content}\x1b[0m`;
 }
+
+export function promptConfirm(command: string, _category: string): string {
+  return [
+    '\x1b[31m⚠ high risk command detected:\x1b[0m',
+    `  \x1b[33m${command}\x1b[0m`,
+    '',
+    '  [y] Execute  [n] Skip',
+  ].join('\n');
+}

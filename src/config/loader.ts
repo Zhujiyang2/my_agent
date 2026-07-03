@@ -39,9 +39,19 @@ export function loadConfig(filePath?: string): Config {
     return value as string;
   }
 
+  const toolsCfg = (cfg.tools as Record<string, unknown> | undefined) ?? {};
+
   return {
     api_url: validateStringField('api_url'),
     model: validateStringField('model'),
     api_key: validateStringField('api_key'),
+    tools: {
+      max_loop_rounds:
+        typeof toolsCfg.max_loop_rounds === 'number' ? toolsCfg.max_loop_rounds : 10,
+      command_timeout:
+        typeof toolsCfg.command_timeout === 'number' ? toolsCfg.command_timeout : 60,
+      background_timeout:
+        typeof toolsCfg.background_timeout === 'number' ? toolsCfg.background_timeout : 0,
+    },
   };
 }

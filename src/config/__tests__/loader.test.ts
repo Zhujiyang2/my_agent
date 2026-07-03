@@ -27,7 +27,14 @@ describe('loadConfig', () => {
     fs.writeFileSync(TEST_CONFIG_FILE, JSON.stringify(config));
 
     const result = loadConfig(TEST_CONFIG_FILE);
-    expect(result).toEqual(config);
+    expect(result).toEqual({
+      ...config,
+      tools: {
+        max_loop_rounds: 10,
+        command_timeout: 60,
+        background_timeout: 0,
+      },
+    });
   });
 
   it('throws on malformed JSON', () => {
@@ -58,6 +65,18 @@ describe('loadConfig', () => {
   it('throws when a field has wrong type', () => {
     fs.writeFileSync(TEST_CONFIG_FILE, JSON.stringify({ api_url: 123, model: 'm', api_key: 'k' }));
     expect(() => loadConfig(TEST_CONFIG_FILE)).toThrow(/must be a string/);
+  });
+
+  it('provides default tools config when not specified', () => {
+    const config = { api_url: 'https://api.example.com/v1', model: 'test', api_key: 'sk-test' };
+    fs.writeFileSync(TEST_CONFIG_FILE, JSON.stringify(config));
+
+    const result = loadConfig(TEST_CONFIG_FILE);
+    expect(result.tools).toEqual({
+      max_loop_rounds: 10,
+      command_timeout: 60,
+      background_timeout: 0,
+    });
   });
 
   it('loads config from default path (~/.my_agent/config.json)', () => {
