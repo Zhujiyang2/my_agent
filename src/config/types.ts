@@ -12,10 +12,17 @@ export interface ContextConfig {
   recent_rounds: number;        // 保留原始输出的轮数，默认 3
 }
 
+export interface SubagentConfig {
+  max_concurrent: number;
+  default_timeout_ms: number;
+  max_inbox_size: number;
+}
+
 export interface Config {
   api_url: string;
   model: string;
   api_key: string;
   tools: ToolsConfig;
   context: ContextConfig;
+  subagent: SubagentConfig;
 }

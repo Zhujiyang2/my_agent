@@ -41,6 +41,7 @@ export function loadConfig(filePath?: string): Config {
 
   const toolsCfg = (cfg.tools as Record<string, unknown> | undefined) ?? {};
   const contextCfg = (cfg.context as Record<string, unknown> | undefined) ?? {};
+  const subagentCfg = (cfg.subagent as Record<string, unknown> | undefined) ?? {};
 
   return {
     api_url: validateStringField('api_url'),
@@ -61,6 +62,14 @@ export function loadConfig(filePath?: string): Config {
         typeof contextCfg.max_context_tokens === 'number' ? contextCfg.max_context_tokens : 0,
       recent_rounds:
         typeof contextCfg.recent_rounds === 'number' ? contextCfg.recent_rounds : 3,
+    },
+    subagent: {
+      max_concurrent:
+        typeof subagentCfg.max_concurrent === 'number' ? subagentCfg.max_concurrent : 8,
+      default_timeout_ms:
+        typeof subagentCfg.default_timeout_ms === 'number' ? subagentCfg.default_timeout_ms : 600_000,
+      max_inbox_size:
+        typeof subagentCfg.max_inbox_size === 'number' ? subagentCfg.max_inbox_size : 50,
     },
   };
 }

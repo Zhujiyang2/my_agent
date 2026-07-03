@@ -173,11 +173,14 @@ describe('createContextManager', () => {
         const result = cm.assemble();
         const toolMessages = result.filter(m => m.role === 'tool');
 
-        // 4 identical summaries → should be reduced
-        expect(toolMessages.length).toBeLessThan(4);
-        // Should have a system note about merging
-        const notes = result.filter(m => m.role === 'system' && m.content?.includes('merged'));
-        expect(notes.length).toBeGreaterThanOrEqual(1);
+        // All 4 tool messages preserved (tool_call_ids must not be orphaned),
+        // but earlier duplicates have [merged] prefix
+        expect(toolMessages).toHaveLength(4);
+        const mergedTools = toolMessages.filter(
+          m => m.content?.startsWith('[merged]'),
+        );
+        expect(mergedTools).toHaveLength(3); // first 3 merged, last kept original
+        expect(toolMessages[3].content).toBe('output-4'); // last one intact
     });
 
     it('does not deduplicate different summaries', () => {

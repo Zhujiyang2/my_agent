@@ -278,13 +278,14 @@ describe('Scenario 4: Dedup — adjacent identical summaries merged', () => {
         const result = cm.assemble();
         const toolMsgs = result.filter(m => m.role === 'tool');
 
-        // 4 → should be reduced
-        expect(toolMsgs.length).toBeLessThan(4);
-        // Merge notes present
-        const mergeNotes = result.filter(m =>
-            m.role === 'system' && (m.content?.includes('merged') || m.content?.includes('identical')),
+        // All 4 tool messages preserved (tool_call_ids must not be orphaned),
+        // but earlier duplicates have [merged] prefix
+        expect(toolMsgs).toHaveLength(4);
+        const mergedTools = toolMsgs.filter(
+          m => m.content?.startsWith('[merged]'),
         );
-        expect(mergeNotes.length).toBeGreaterThanOrEqual(1);
+        expect(mergedTools).toHaveLength(3); // first 3 merged, last intact
+        expect(toolMsgs[3].content).toBe(`[check 3] GPU detailed: util=78%, temp=65C, memory=12GB/16GB, power=250W`);
     });
 
     it('different summaries are not deduplicated', () => {
@@ -428,9 +429,12 @@ describe('Scenario 7: All 3 phases — age + dedup + budget combined', () => {
         const result = cm.assemble();
         const toolMsgs = result.filter(m => m.role === 'tool');
 
-        // R0-R2 are old (beyond recent_rounds=2), same summary → deduped
-        // R3 is recent → preserved
-        expect(toolMsgs.length).toBeLessThanOrEqual(3);
+        // R0-R2 are old (beyond recent_rounds=2), same summary → dedup prefixed with [merged]
+        // R3 is recent and different → preserved intact
+        // All tool_call_ids must be preserved (OpenAI API invariant)
+        expect(toolMsgs.length).toBe(4);
+        const mergedTools = toolMsgs.filter(m => m.content?.startsWith('[merged]'));
+        expect(mergedTools.length).toBeGreaterThanOrEqual(1); // at least R0, R1 merged
 
         // User/assistant messages always survive
         const userMsgs = result.filter(m => m.role === 'user');
@@ -597,7 +601,6 @@ describe('Scenario 10: Realistic debug session simulation', () => {
 
         const result = cm.assemble();
         const toolMsgs = result.filter(m => m.role === 'tool');
-        const systemMsgs = result.filter(m => m.role === 'system');
         const userMsgs = result.filter(m => m.role === 'user');
 
         // === Assertions ===
@@ -612,16 +615,17 @@ describe('Scenario 10: Realistic debug session simulation', () => {
         // 2. All user messages preserved (6 queries: R0-R5)
         expect(userMsgs.length).toBe(6);
 
-        // 3. Dedup merged monitoring messages (R4-R7 identical summaries)
+        // 3. Dedup prefixes earlier duplicates with [merged] (R4-R7 identical summaries)
+        // All 4 tool_call_ids must be preserved — OpenAI API invariant
+        const monitoringIds = ['call_4a', 'call_5a', 'call_6a', 'call_7a'];
         const monitoringTools = toolMsgs.filter(m =>
-            (m as Message & { summary?: string }).summary?.includes('loss decreasing'),
+            monitoringIds.includes(m.tool_call_id as string),
         );
-        // 4 identical → should be reduced
-        expect(monitoringTools.length).toBeLessThan(4);
-
-        // 4. Merge notes generated for dedup
-        const mergeNote = systemMsgs.find(m => m.content?.includes('merged'));
-        expect(mergeNote).toBeDefined();
+        expect(monitoringTools).toHaveLength(4);
+        const mergedMonitoring = monitoringTools.filter(m =>
+          m.content?.startsWith('[merged]'),
+        );
+        expect(mergedMonitoring.length).toBeGreaterThanOrEqual(1); // earlier ones merged
 
         // 5. assemble() is deterministic — second call returns same result
         const r2 = cm.assemble();
@@ -679,5 +683,109 @@ describe('Scenario 11: keyOutput preserved in compacted content', () => {
         const toolMsgResult = result.find(m => m.role === 'tool')!;
         // Summary without keyOutput — clean, no pipe separator
         expect(toolMsgResult.content).toBe('exit=0 | echo done');
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// Regression: dedup must preserve tool_call_id pairing
+// Bug: dedup removed earlier tool message with same summary, but the
+// assistant message referencing its tool_call_id became orphaned.
+// This caused OpenAI API 400: "insufficient tool messages following
+// tool_calls message".
+// ═══════════════════════════════════════════════════════════════════
+describe('dedup preserves tool_call_id invariant', () => {
+    const cfg: ContextConfig = { max_context_tokens: 100000, recent_rounds: 3 };
+
+    it('dedup keeps tool_call_id intact so assistant tool_calls always have matching responses', () => {
+        const cm = createContextManager(cfg);
+
+        // Simulate: main agent spawns 2 subagents in one round
+        cm.append({
+            role: 'assistant', content: null,
+            tool_calls: [
+                { id: 'call_spawn_1', type: 'function' as const, function: { name: 'spawn_agent', arguments: '{}' } },
+                { id: 'call_spawn_2', type: 'function' as const, function: { name: 'spawn_agent', arguments: '{}' } },
+            ],
+        });
+        cm.append(toolMsg('subagent running: program1...', 'call_spawn_1', 'spawn_agent', 'subagent running: program1', 0));
+        cm.append(toolMsg('subagent running: program2...', 'call_spawn_2', 'spawn_agent', 'subagent running: program2', 0));
+
+        // Round 2: main agent calls list_agents
+        cm.append({
+            role: 'assistant', content: null,
+            tool_calls: [
+                { id: 'call_list_1', type: 'function' as const, function: { name: 'list_agents', arguments: '{}' } },
+            ],
+        });
+        cm.append(toolMsg('2 subagent(s) | running=2', 'call_list_1', 'list_agents', '2 subagent(s) | running=2', 0));
+
+        // Round 3: main agent calls list_agents again — SAME summary as before
+        cm.append({
+            role: 'assistant', content: null,
+            tool_calls: [
+                { id: 'call_list_2', type: 'function' as const, function: { name: 'list_agents', arguments: '{}' } },
+            ],
+        });
+        cm.append(toolMsg('2 subagent(s) | running=2', 'call_list_2', 'list_agents', '2 subagent(s) | running=2', 0));
+
+        cm.compact();
+
+        const assembled = cm.assemble();
+
+        // Verify: every assistant with tool_calls has matching tool responses
+        for (let i = 0; i < assembled.length; i++) {
+            const msg = assembled[i];
+            if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
+                const expectedIds = new Set(msg.tool_calls.map(tc => tc.id));
+                const foundIds = new Set<string>();
+
+                // Collect tool messages immediately following
+                for (let j = i + 1; j < assembled.length; j++) {
+                    if (assembled[j].role === 'tool' && assembled[j].tool_call_id) {
+                        foundIds.add(assembled[j].tool_call_id!);
+                    } else if (assembled[j].role !== 'system') {
+                        break; // stop at next non-tool, non-system message
+                    }
+                }
+
+                expect(foundIds.size).toBe(expectedIds.size);
+                for (const id of expectedIds) {
+                    expect(foundIds.has(id)).toBe(true);
+                }
+            }
+        }
+    });
+
+    it('dedup with duplicate subagent tool summaries does not orphan earlier tool_call_ids', () => {
+        const cm = createContextManager(cfg);
+
+        // Simulate two sequential spawn_agent calls with different tasks but
+        // the tool result summaries could be identical (e.g. both "subagent running: ...")
+        cm.append({
+            role: 'assistant', content: null,
+            tool_calls: [
+                { id: 'call_1', type: 'function' as const, function: { name: 'spawn_agent', arguments: '{}' } },
+            ],
+        });
+        cm.append(toolMsg('spawned', 'call_1', 'spawn_agent', 'subagent running: task A', 0));
+
+        cm.append({
+            role: 'assistant', content: null,
+            tool_calls: [
+                { id: 'call_2', type: 'function' as const, function: { name: 'spawn_agent', arguments: '{}' } },
+            ],
+        });
+        cm.append(toolMsg('spawned', 'call_2', 'spawn_agent', 'subagent running: task A', 0));
+
+        cm.compact();
+        const assembled = cm.assemble();
+
+        // Both tool_call_ids must be present
+        const toolIds = assembled
+            .filter(m => m.role === 'tool')
+            .map(m => m.tool_call_id);
+
+        expect(toolIds).toContain('call_1');
+        expect(toolIds).toContain('call_2');
     });
 });

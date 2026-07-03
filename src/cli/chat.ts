@@ -57,6 +57,18 @@ function summarizeArgs(name: string, args: Record<string, unknown>): string {
       return truncate(String(args.path ?? ''), 60);
     case 'read_file':
       return truncate(String(args.path ?? ''), 60);
+    case 'spawn_agent':
+      return `subagent: ${truncate(String(args.task ?? ''), 60)}`;
+    case 'kill_agent':
+      return `kill: ${truncate(String(args.id ?? ''), 20)}`;
+    case 'list_agents':
+      return 'list subagents';
+    case 'get_agent_result':
+      return `result: ${truncate(String(args.id ?? ''), 20)}`;
+    case 'check_subagent_messages':
+      return 'check messages';
+    case 'send_message_to_subagent':
+      return `msg → ${truncate(String(args.to ?? ''), 20)}`;
     case 'glob':
       return truncate(String(args.pattern ?? ''), 60);
     default:
