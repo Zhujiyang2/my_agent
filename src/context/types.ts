@@ -1,0 +1,33 @@
+import type { Message } from '../llm/types';
+import type { ContextConfig } from '../config/types';
+
+export type { ContextConfig };
+
+export interface ContextManager {
+    /** Add a message to the flow layer. */
+    append(message: Message): void;
+
+    /** Pure read: assemble the final messages for the next LLM call. No side effects. */
+    assemble(): Message[];
+
+    /** Explicit compaction: apply age-based summarization, dedup, and budget enforcement. */
+    compact(): void;
+
+    /** Pin message at flow index — it will never be compacted. */
+    pin(index: number): void;
+
+    /** Unpin a previously pinned message. */
+    unpin(index: number): void;
+
+    /** Update a key in the state layer. */
+    setState(key: string, value: unknown): void;
+
+    /** Get the current state layer object (shallow copy). */
+    getState(): Record<string, unknown>;
+
+    /** Remove all messages after the first `count` messages (for error rollback). */
+    truncateTo(count: number): void;
+
+    /** Cancel pending work (for Ctrl+C). */
+    cancelAll(): void;
+}

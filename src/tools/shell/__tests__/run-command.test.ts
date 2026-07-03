@@ -44,4 +44,19 @@ describe('runCommandTool', () => {
     const result = await runCommandTool.handler({ command: '' });
     expect(result.isError).toBe(true);
   });
+
+  it('returns structured ToolResult with summary and exitCode', async () => {
+    const result = await runCommandTool.handler({ command: 'echo hello' });
+    expect(result.summary).toBeDefined();
+    expect(typeof result.summary).toBe('string');
+    expect(result.summary).toContain('exit=0');
+    expect(result.exitCode).toBe(0);
+    expect(result.keyOutput).toBeDefined();
+  });
+
+  it('returns exitCode 1 and isError for failed commands', async () => {
+    const result = await runCommandTool.handler({ command: 'node -e "process.exit(1)"' });
+    expect(result.exitCode).toBe(1);
+    expect(result.isError).toBe(true);
+  });
 });

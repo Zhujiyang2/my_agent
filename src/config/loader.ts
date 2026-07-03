@@ -40,6 +40,7 @@ export function loadConfig(filePath?: string): Config {
   }
 
   const toolsCfg = (cfg.tools as Record<string, unknown> | undefined) ?? {};
+  const contextCfg = (cfg.context as Record<string, unknown> | undefined) ?? {};
 
   return {
     api_url: validateStringField('api_url'),
@@ -54,6 +55,12 @@ export function loadConfig(filePath?: string): Config {
         typeof toolsCfg.command_timeout === 'number' ? toolsCfg.command_timeout : 60,
       background_timeout:
         typeof toolsCfg.background_timeout === 'number' ? toolsCfg.background_timeout : 0,
+    },
+    context: {
+      max_context_tokens:
+        typeof contextCfg.max_context_tokens === 'number' ? contextCfg.max_context_tokens : 0,
+      recent_rounds:
+        typeof contextCfg.recent_rounds === 'number' ? contextCfg.recent_rounds : 3,
     },
   };
 }

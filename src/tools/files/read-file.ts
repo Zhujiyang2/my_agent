@@ -27,10 +27,17 @@ export const readFileTool: ToolDefinition = {
       const end = limit !== undefined ? start + limit : lines.length;
       const selected = lines.slice(start, end);
       const numbered = selected.map((line, i) => `${start + i + 1}: ${line}`).join('\n');
-      return { content: numbered };
+      return {
+        content: numbered,
+        summary: `read ${selected.length} lines from ${filePath}`,
+        exitCode: 0,
+        keyOutput: numbered.slice(0, 300),
+      };
     } catch (e) {
       return {
         content: `Error reading file: ${e instanceof Error ? e.message : String(e)}`,
+        summary: `read error: ${e instanceof Error ? e.message : String(e)}`,
+        exitCode: 1,
         isError: true,
       };
     }

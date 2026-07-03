@@ -52,4 +52,19 @@ describe('writeFileTool', () => {
     expect(result.isError).toBeFalsy();
     expect(fs.readFileSync(deepFile, 'utf-8')).toBe('deep');
   });
+
+  it('returns structured ToolResult with summary and exitCode on success', async () => {
+    const result = await writeFileTool.handler({ path: testFile, content: 'hello world' });
+    expect(result.summary).toBeDefined();
+    expect(typeof result.summary).toBe('string');
+    expect(result.exitCode).toBe(0);
+  });
+
+  it('returns exitCode 1 on write error', async () => {
+    const blockerFile = path.join(testDir, 'blocker');
+    fs.writeFileSync(blockerFile, 'block');
+    const result = await writeFileTool.handler({ path: path.join(blockerFile, 'sub', 'output.txt'), content: 'test' });
+    expect(result.isError).toBe(true);
+    expect(result.exitCode).toBe(1);
+  });
 });

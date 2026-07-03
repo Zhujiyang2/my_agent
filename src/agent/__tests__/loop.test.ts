@@ -5,6 +5,8 @@ import type { Config } from '../../config/types';
 import type { StreamResult } from '../../llm/client';
 import { createRegistry } from '../../tools/registry';
 import type { ToolRegistry, ToolDefinition } from '../../tools/registry';
+import { createContextManager } from '../../context/manager';
+import type { ContextManager } from '../../context/types';
 
 vi.mock('../../llm/client', () => ({
   chatStream: vi.fn(),
@@ -23,6 +25,10 @@ const TEST_CONFIG: Config = {
     max_consecutive_failures: 3,
     command_timeout: 60,
     background_timeout: 0,
+  },
+  context: {
+    max_context_tokens: 100000,
+    recent_rounds: 3,
   },
 };
 
@@ -51,7 +57,7 @@ function createEchoTool(registry: ToolRegistry): ToolDefinition {
       properties: { message: { type: 'string', description: 'Message to echo' } },
       required: ['message'],
     },
-    handler: async (params: Record<string, unknown>) => ({ content: `echo: ${params.message}` }),
+    handler: async (params: Record<string, unknown>) => ({ content: `echo: ${params.message}`, summary: `exit=0 | echo ${params.message}`, exitCode: 0 }),
   };
   registry.register(tool);
   return tool;
@@ -252,7 +258,7 @@ describe('createAgent', () => {
       name: 'flaky',
       description: 'Always fails',
       parameters: { type: 'object', properties: {}, required: [] },
-      handler: async () => ({ content: 'fail', isError: true }),
+      handler: async () => ({ content: 'fail', isError: true, summary: 'exit=1 | tool failed', exitCode: 1 }),
     });
 
     // LLM keeps retrying the flaky tool
@@ -268,7 +274,7 @@ describe('createAgent', () => {
       name: 'flaky',
       description: 'Sometimes fails',
       parameters: { type: 'object', properties: {}, required: [] },
-      handler: async () => ({ content: 'fail', isError: true }),
+      handler: async () => ({ content: 'fail', isError: true, summary: 'exit=1 | tool failed', exitCode: 1 }),
     });
     createEchoTool(registry);
 
@@ -296,7 +302,7 @@ describe('createAgent', () => {
       name: 'flaky',
       description: 'Always fails',
       parameters: { type: 'object', properties: {}, required: [] },
-      handler: async () => ({ content: 'fail', isError: true }),
+      handler: async () => ({ content: 'fail', isError: true, summary: 'exit=1 | tool failed', exitCode: 1 }),
     });
 
     mockedChatStream.mockResolvedValue(makeToolCallResult('flaky', {}));
@@ -308,4 +314,119 @@ describe('createAgent', () => {
     expect(agent.history.length).toBeGreaterThan(0);
     expect(agent.history[0].role).toBe('user');
   });
+});
+
+describe('ContextManager integration', () => {
+    let registry: ToolRegistry;
+    let cm: ContextManager;
+
+    beforeEach(() => {
+        mockedChatStream.mockClear();
+        registry = createRegistry();
+        cm = createContextManager(
+            { max_context_tokens: 100000, recent_rounds: 3 },
+        );
+    });
+
+    it('auto-pins error tool results', async () => {
+        registry.register({
+            name: 'failing_tool',
+            description: 'Always fails',
+            parameters: { type: 'object', properties: {}, required: [] },
+            handler: async () => ({
+                content: 'error: something broke',
+                summary: 'exit=1 | something broke',
+                exitCode: 1,
+                isError: true,
+                keyOutput: 'error: something broke',
+            }),
+        });
+
+        mockedChatStream
+            .mockResolvedValueOnce(makeToolCallResult('failing_tool', {}, 'call_1'))
+            .mockResolvedValueOnce(makeTextResult('The tool failed'));
+
+        const agent = createAgent(TEST_CONFIG, { registry, contextManager: cm });
+        await agent.send('test pin');
+
+        // The error tool result should have its content preserved (pinned = not compacted)
+        const history = [...agent.history];
+        const toolMsg = history.find(m => m.role === 'tool');
+        expect(toolMsg).toBeDefined();
+    });
+
+    it('compact runs after each round without error', async () => {
+        registry.register({
+            name: 'echo',
+            description: 'Echo',
+            parameters: {
+                type: 'object',
+                properties: { message: { type: 'string', description: 'msg' } },
+                required: ['message'],
+            },
+            handler: async (params: Record<string, unknown>) => ({
+                content: `echo: ${params.message}`,
+                summary: `exit=0 | echo ${params.message}`,
+                exitCode: 0,
+                keyOutput: `echo: ${params.message}`,
+            }),
+        });
+
+        mockedChatStream
+            .mockResolvedValueOnce(makeToolCallResult('echo', { message: 'hello' }, 'call_1'))
+            .mockResolvedValueOnce(makeTextResult('done'));
+
+        const agent = createAgent(TEST_CONFIG, { registry, contextManager: cm });
+        const reply = await agent.send('echo test');
+        expect(reply).toBe('done');
+    });
+
+    it('preserves history structure with context manager', async () => {
+        registry.register({
+            name: 'echo',
+            description: 'Echo',
+            parameters: {
+                type: 'object',
+                properties: { message: { type: 'string', description: 'msg' } },
+                required: ['message'],
+            },
+            handler: async (params: Record<string, unknown>) => ({
+                content: `echo: ${params.message}`,
+                summary: `exit=0 | echo ${params.message}`,
+                exitCode: 0,
+                keyOutput: `echo: ${params.message}`,
+            }),
+        });
+
+        mockedChatStream
+            .mockResolvedValueOnce(makeToolCallResult('echo', { message: 'hello' }, 'call_1'))
+            .mockResolvedValueOnce(makeTextResult('I echoed your message'));
+
+        const agent = createAgent(TEST_CONFIG, { registry, contextManager: cm });
+        await agent.send('echo hello');
+
+        const history = [...agent.history];
+        const nonSystem = history.filter(m => m.role !== 'system');
+        expect(nonSystem).toHaveLength(4);
+        expect(nonSystem[0].role).toBe('user');
+        expect(nonSystem[1].role).toBe('assistant');
+        expect(nonSystem[1].tool_calls).toBeDefined();
+        expect(nonSystem[2].role).toBe('tool');
+        expect(nonSystem[3].role).toBe('assistant');
+    });
+
+    it('error rollback works with context manager', async () => {
+        mockedChatStream.mockRejectedValueOnce(new Error('Network error'));
+
+        const agent = createAgent(TEST_CONFIG, { registry, contextManager: cm });
+        await expect(agent.send('boom')).rejects.toThrow('Network error');
+
+        const history = [...agent.history];
+        const nonSystem = history.filter(m => m.role !== 'system');
+        expect(nonSystem).toHaveLength(0);
+
+        mockedChatStream.mockResolvedValueOnce(makeTextResult('recovered'));
+        const reply = await agent.send('retry');
+        expect(reply).toBe('recovered');
+    });
 });

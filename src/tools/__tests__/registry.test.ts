@@ -8,7 +8,7 @@ function makeTool(name: string): ToolDefinition {
     name,
     description: `Tool: ${name}`,
     parameters: { type: 'object', properties: {}, required: [] },
-    handler: async () => ({ content: `${name} done` }),
+    handler: async () => ({ content: `${name} done`, summary: 'exit=0 | ok', exitCode: 0 }),
   };
 }
 
