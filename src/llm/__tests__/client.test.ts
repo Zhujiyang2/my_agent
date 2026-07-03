@@ -18,6 +18,11 @@ const TEST_CONFIG: Config = {
     max_context_tokens: 100000,
     recent_rounds: 3,
   },
+  subagent: {
+    max_concurrent: 8,
+    default_timeout_ms: 600000,
+    max_inbox_size: 50,
+  },
 };
 
 const TEST_MESSAGES: Message[] = [
