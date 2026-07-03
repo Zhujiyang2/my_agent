@@ -59,4 +59,30 @@ describe('assembleLayers', () => {
     expect(result).toHaveLength(1);
     expect(result[0].content).toContain('npu-smi');
   });
+
+  // Test #45
+  it('no knowledge injected when directory is empty', () => {
+    const result = assembleLayers({
+      flow: [{ role: 'user', content: 'test' }],
+      state: {},
+      knowledge: '',
+    });
+    // Only flow message should be present
+    expect(result).toHaveLength(1);
+    expect(result[0].role).toBe('user');
+  });
+
+  // Test #47
+  it('knowledge layer appears as first system message', () => {
+    const result = assembleLayers({
+      flow: [{ role: 'user', content: 'hello' }],
+      state: { task: 'test' },
+      knowledge: '# References\n\nnpu-smi info — show NPU status',
+    });
+
+    expect(result[0].role).toBe('system');
+    expect(result[0].content).toContain('npu-smi');
+    expect(result[1].role).toBe('system'); // state
+    expect(result[2].role).toBe('user');
+  });
 });
