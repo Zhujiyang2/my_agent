@@ -46,7 +46,7 @@ describe('createSummarizer', () => {
     mockFetch.mockResolvedValueOnce(makeFetchResponse('Training started successfully (exit 0)'));
 
     await summarizer.summarize('run_command', {
-      content: 'Training done, exit 0',
+      content: 'Training done, exit 0. '.repeat(20),
       isError: false,
     });
 
@@ -57,7 +57,7 @@ describe('createSummarizer', () => {
 
     expect(systemMsg.content).toContain('Summarize');
     expect(userMsg.content).toContain('run_command');
-    expect(userMsg.content).toContain('Training done, exit 0');
+    expect(userMsg.content).toContain('Training done');
   });
 
   // Test #29
@@ -81,7 +81,6 @@ describe('createSummarizer', () => {
       isError: false,
     });
 
-    const sentences = result.split('. ').length;
     // Should be concise — exact truncation depends on sentence boundaries,
     // but should be materially shorter than the original 5 sentences
     expect(result.length).toBeLessThan(100);
@@ -123,14 +122,15 @@ describe('createSummarizer', () => {
 
   // Test concurrency cap at 5
   it('respects concurrency cap of 5', async () => {
-    // Create 5 resolves and 1 that won't resolve until after the first 5
-    let sixthResolve!: (value: Response) => void;
-    const sixthPromise = new Promise<Response>((resolve) => { sixthResolve = resolve; });
-
+    // Create 5 pending promises that block slots
+    const resolvers: Array<(value: Response) => void> = [];
     for (let i = 0; i < 5; i++) {
-      mockFetch.mockResolvedValueOnce(makeFetchResponse(`Summary ${i}`));
+      mockFetch.mockReturnValueOnce(new Promise<Response>((resolve) => {
+        resolvers.push(resolve);
+      }));
     }
-    mockFetch.mockReturnValueOnce(sixthPromise);
+    // 6th call will use this once a slot frees up
+    mockFetch.mockResolvedValueOnce(makeFetchResponse('Summary 6'));
 
     const longResult: ToolResult = { content: 'X'.repeat(500), isError: false };
 
@@ -142,13 +142,20 @@ describe('createSummarizer', () => {
     // Allow microtasks to flush
     await new Promise((r) => setTimeout(r, 50));
 
-    // First 5 should have been called
+    // First 5 should have been called, 6th is queued
     expect(mockFetch).toHaveBeenCalledTimes(5);
 
-    // Resolve the 6th
-    sixthResolve(makeFetchResponse('Summary 5'));
-    await Promise.all(promises);
+    // Resolve first one — releases a slot, 6th should start
+    resolvers[0](makeFetchResponse('Summary 0'));
+    await new Promise((r) => setTimeout(r, 50));
 
+    // 6th should now have fetched
     expect(mockFetch).toHaveBeenCalledTimes(6);
+
+    // Resolve remaining 4
+    for (let i = 1; i < 5; i++) {
+      resolvers[i](makeFetchResponse(`Summary ${i}`));
+    }
+    await Promise.all(promises);
   });
 });

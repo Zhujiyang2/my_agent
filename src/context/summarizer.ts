@@ -2,7 +2,7 @@
 import type { Summarizer, ContextConfig } from './types';
 import type { ToolResult } from '../tools/types';
 
-const SHORT_OUTPUT_THRESHOLD = 15; // characters
+const SHORT_OUTPUT_THRESHOLD = 200; // characters
 const MAX_CONCURRENT = 5;
 
 interface ApiConfig {
@@ -22,18 +22,8 @@ export function createSummarizer(
 
   function releaseSlot(): void {
     pending--;
-    // Defer queue drain to avoid eager re-entry within the same microtask chain.
-    // This ensures the concurrency cap test can observe exactly MAX_CONCURRENT
-    // in-flight calls before any queued caller proceeds.
-    if (queue.length > 0) {
-      setTimeout(() => {
-        const next = queue.shift();
-        if (next && !aborted) {
-          pending++;
-          next();
-        }
-      }, 150);
-    }
+    const next = queue.shift();
+    if (next) next();
   }
 
   function acquireSlot(): Promise<void> {
