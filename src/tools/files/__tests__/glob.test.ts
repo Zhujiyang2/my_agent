@@ -51,4 +51,18 @@ describe('globTool', () => {
     const result = await globTool.handler({ pattern: '*', workdir: '/nonexistent/path' });
     expect(result.isError).toBe(true);
   });
+
+  it('returns structured ToolResult with summary and exitCode', async () => {
+    const result = await globTool.handler({ pattern: '*.log', workdir: testDir });
+    expect(result.summary).toBeDefined();
+    expect(typeof result.summary).toBe('string');
+    expect(result.exitCode).toBe(0);
+    expect(result.keyOutput).toBeDefined();
+  });
+
+  it('returns exitCode 1 for glob error', async () => {
+    const result = await globTool.handler({ pattern: '*', workdir: '/nonexistent/path' });
+    expect(result.isError).toBe(true);
+    expect(result.exitCode).toBe(1);
+  });
 });

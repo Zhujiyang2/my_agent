@@ -98,10 +98,18 @@ export const globTool: ToolDefinition = {
 
     try {
       const result = runGlob(pattern, workdir);
-      return { content: result };
+      const fileCount = result ? result.split('\n').length : 0;
+      return {
+        content: result,
+        summary: `matched ${fileCount} files: ${result.slice(0, 80)}`,
+        exitCode: 0,
+        keyOutput: result.slice(0, 300),
+      };
     } catch (e) {
       return {
         content: `glob error: ${e instanceof Error ? e.message : String(e)}`,
+        summary: `glob error: ${e instanceof Error ? e.message : String(e)}`,
+        exitCode: 1,
         isError: true,
       };
     }

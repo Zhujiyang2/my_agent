@@ -35,6 +35,10 @@ describe('loadConfig', () => {
         command_timeout: 60,
         background_timeout: 0,
       },
+      context: {
+        max_context_tokens: 0,
+        recent_rounds: 3,
+      },
     });
   });
 

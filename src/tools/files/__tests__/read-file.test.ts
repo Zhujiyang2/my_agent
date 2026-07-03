@@ -43,4 +43,18 @@ describe('readFileTool', () => {
     const result = await readFileTool.handler({ path: '/nonexistent/file.txt' });
     expect(result.isError).toBe(true);
   });
+
+  it('returns structured ToolResult with summary and exitCode', async () => {
+    const result = await readFileTool.handler({ path: testFile });
+    expect(result.summary).toBeDefined();
+    expect(typeof result.summary).toBe('string');
+    expect(result.exitCode).toBe(0);
+    expect(result.keyOutput).toBeDefined();
+  });
+
+  it('returns exitCode 1 for read error', async () => {
+    const result = await readFileTool.handler({ path: '/nonexistent/file.txt' });
+    expect(result.isError).toBe(true);
+    expect(result.exitCode).toBe(1);
+  });
 });

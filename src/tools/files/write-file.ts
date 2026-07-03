@@ -28,10 +28,18 @@ export const writeFileTool: ToolDefinition = {
       fs.writeFileSync(filePath, content, 'utf-8');
       const bytes = Buffer.byteLength(content, 'utf-8');
       const action = existed ? 'Overwritten' : 'Created';
-      return { content: `${action} ${filePath} (${bytes} bytes)` };
+      const msg = `${action} ${filePath} (${bytes} bytes)`;
+      return {
+        content: msg,
+        summary: `wrote ${content.split('\n').length} lines to ${filePath}`,
+        exitCode: 0,
+        keyOutput: msg,
+      };
     } catch (e) {
       return {
         content: `Error writing file: ${e instanceof Error ? e.message : String(e)}`,
+        summary: `write error: ${e instanceof Error ? e.message : String(e)}`,
+        exitCode: 1,
         isError: true,
       };
     }

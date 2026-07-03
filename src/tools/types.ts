@@ -18,6 +18,9 @@ export interface ToolDefinition {
 }
 
 export interface ToolResult {
-  content: string;
-  isError?: boolean;
+    content: string;
+    summary: string;
+    exitCode?: number;
+    keyOutput?: string;
+    isError?: boolean;
 }
