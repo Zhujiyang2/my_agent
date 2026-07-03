@@ -1,400 +1,286 @@
 // src/context/__tests__/manager.test.ts
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { createContextManager } from '../manager';
-import type { ContextManager, Summarizer, ContextConfig } from '../types';
+import type { ContextManager, ContextConfig } from '../types';
 import type { Message } from '../../llm/types';
 
 const CONTEXT_CONFIG: ContextConfig = {
-  max_context_tokens: 100000,
-  flow_rounds: 10,
-  summarizer_model: '',
+    max_context_tokens: 100000,
+    recent_rounds: 3,
 };
 
 function userMsg(content: string): Message {
-  return { role: 'user', content };
+    return { role: 'user', content };
 }
 
 function assistantMsg(content: string): Message {
-  return { role: 'assistant', content };
+    return { role: 'assistant', content };
 }
 
-function toolMsg(content: string, tool_call_id = 'call_1', name = 'run_command'): Message {
-  return { role: 'tool', content, tool_call_id, name };
-}
-
-function createMockSummarizer(summaryText?: string): Summarizer {
-  const summary = summaryText ?? 'Mock summary (exit 0)';
-  return {
-    summarize: vi.fn().mockResolvedValue(summary),
-    cancelAll: vi.fn(),
-  };
+function toolMsg(
+    content: string,
+    tool_call_id = 'call_1',
+    name = 'run_command',
+    summary?: string,
+    exitCode?: number,
+    keyOutput?: string,
+): Message {
+    return {
+        role: 'tool',
+        content,
+        tool_call_id,
+        name,
+        summary: summary ?? 'summary',
+        exitCode,
+        keyOutput,
+    } as Message & { summary?: string; exitCode?: number; keyOutput?: string };
 }
 
 describe('createContextManager', () => {
-  let cm: ContextManager;
-  let mockSummarizer: Summarizer;
+    let cm: ContextManager;
 
-  beforeEach(() => {
-    mockSummarizer = createMockSummarizer();
-    cm = createContextManager(CONTEXT_CONFIG, mockSummarizer);
-  });
-
-  // === Basic Operations ===
-
-  // Test #1
-  it('returns appended messages from assemble', () => {
-    cm.append(userMsg('hello'));
-    cm.append(assistantMsg('hi there'));
-
-    const result = cm.assemble();
-    expect(result).toHaveLength(2);
-    expect(result[0].role).toBe('user');
-    expect(result[0].content).toBe('hello');
-    expect(result[1].role).toBe('assistant');
-    expect(result[1].content).toBe('hi there');
-  });
-
-  // Test #2
-  it('preserves all messages from multiple rounds', () => {
-    for (let i = 0; i < 5; i++) {
-      cm.append(userMsg(`q${i}`));
-      cm.append(assistantMsg(`a${i}`));
-    }
-    expect(cm.assemble()).toHaveLength(10);
-  });
-
-  // Test #3
-  it('accumulates across multiple append calls', () => {
-    cm.append(userMsg('a'));
-    cm.append(userMsg('b'));
-    cm.append(assistantMsg('c'));
-    expect(cm.assemble()).toHaveLength(3);
-  });
-
-  // === Async Summarization ===
-
-  // Test #4
-  it('raw output is visible immediately before summary completes', () => {
-    const msg = toolMsg('X'.repeat(5000), 'call_1');
-    cm.append(msg);
-    cm.scheduleSummarize('call_1', 'run_command', {
-      content: 'X'.repeat(5000),
-      isError: false,
+    beforeEach(() => {
+        cm = createContextManager(CONTEXT_CONFIG);
     });
 
-    const result = cm.assemble();
-    const toolMessages = result.filter((m) => m.role === 'tool');
-    expect(toolMessages[0].content).toBe('X'.repeat(5000));
-  });
+    // === Basic Operations ===
 
-  // Test #5
-  it('replaces raw output with summary after flush', async () => {
-    const msg = toolMsg('X'.repeat(5000), 'call_1');
-    cm.append(msg);
-    cm.scheduleSummarize('call_1', 'run_command', {
-      content: 'X'.repeat(5000),
-      isError: false,
+    it('returns appended messages from assemble', () => {
+        cm.append(userMsg('hello'));
+        cm.append(assistantMsg('hi there'));
+        const result = cm.assemble();
+        expect(result).toHaveLength(2);
+        expect(result[0].role).toBe('user');
+        expect(result[0].content).toBe('hello');
+        expect(result[1].role).toBe('assistant');
+        expect(result[1].content).toBe('hi there');
     });
 
-    await cm.flushPendingSummaries();
-
-    const result = cm.assemble();
-    const toolMessages = result.filter((m) => m.role === 'tool');
-    expect(toolMessages[0].content).toBe('Mock summary (exit 0)');
-  });
-
-  // Test #6
-  it('summary retains key information from the original output', async () => {
-    (mockSummarizer.summarize as ReturnType<typeof vi.fn>).mockResolvedValue(
-      'Training started on node1 (exit 0)',
-    );
-
-    cm.append(toolMsg('...', 'call_1'));
-    cm.scheduleSummarize('call_1', 'run_command', {
-      content: 'Training started on node1, pid=12345\n[2000 lines of logs]\nexit code: 0',
-      isError: false,
+    it('assemble is pure — repeated calls return same result when no compact', () => {
+        cm.append(userMsg('hello'));
+        const r1 = cm.assemble();
+        const r2 = cm.assemble();
+        expect(r1).toEqual(r2);
     });
 
-    await cm.flushPendingSummaries();
-    const result = cm.assemble();
-    const toolContent = result.find((m) => m.role === 'tool')!.content!;
-
-    expect(toolContent).toContain('Training started on node1');
-    expect(toolContent).toContain('exit 0');
-  });
-
-  // Test #7
-  it('failure summary retains failure reason', async () => {
-    (mockSummarizer.summarize as ReturnType<typeof vi.fn>).mockResolvedValue(
-      'node3 failed: CUDA OOM at layer 12 (exit 1)',
-    );
-
-    cm.append(toolMsg('...', 'call_1'));
-    cm.scheduleSummarize('call_1', 'run_command', {
-      content: 'node3 failed, exit code 1\n[500 line stack trace]\nCUDA OOM at layer 12',
-      isError: true,
+    it('preserves all messages from multiple rounds', () => {
+        for (let i = 0; i < 5; i++) {
+            cm.append(userMsg(`q${i}`));
+            cm.append(assistantMsg(`a${i}`));
+        }
+        expect(cm.assemble()).toHaveLength(10);
     });
 
-    await cm.flushPendingSummaries();
-    const result = cm.assemble();
-    const toolContent = result.find((m) => m.role === 'tool')!.content!;
+    // === Compact: age-based ===
 
-    expect(toolContent).toContain('OOM');
-    expect(toolContent).toContain('exit 1');
-  });
+    it('compact leaves recent tool messages intact', () => {
+        cm.append(userMsg('q1'));
+        cm.append(assistantMsg('a1'));
+        cm.append(toolMsg('full output content here', 'call_1', 'run_command', 'exit=0 | ok', 0, 'full output'));
+        cm.append(assistantMsg('a2'));
 
-  // Test #8
-  it('each tool message gets its own summary', async () => {
-    const mock = mockSummarizer.summarize as ReturnType<typeof vi.fn>;
-    mock
-      .mockResolvedValueOnce('Summary A')
-      .mockResolvedValueOnce('Summary B')
-      .mockResolvedValueOnce('Summary C');
+        cm.compact();
 
-    cm.append(toolMsg('...', 'call_a', 'tool_a'));
-    cm.append(toolMsg('...', 'call_b', 'tool_b'));
-    cm.append(toolMsg('...', 'call_c', 'tool_c'));
-
-    cm.scheduleSummarize('call_a', 'tool_a', { content: 'A-'.repeat(300), isError: false });
-    cm.scheduleSummarize('call_b', 'tool_b', { content: 'B-'.repeat(300), isError: false });
-    cm.scheduleSummarize('call_c', 'tool_c', { content: 'C-'.repeat(300), isError: false });
-
-    await cm.flushPendingSummaries();
-    const result = cm.assemble();
-    const toolContents = result.filter((m) => m.role === 'tool').map((m) => m.content);
-
-    expect(toolContents).toEqual(['Summary A', 'Summary B', 'Summary C']);
-  });
-
-  // Test #9
-  it('scheduleSummarize does not affect non-tool messages', async () => {
-    cm.append(userMsg('question'));
-    cm.append(toolMsg('...', 'call_1'));
-    cm.append(assistantMsg('answer'));
-
-    cm.scheduleSummarize('call_1', 'run_command', {
-      content: 'X'.repeat(500),
-      isError: false,
+        const result = cm.assemble();
+        const toolMessages = result.filter(m => m.role === 'tool');
+        expect(toolMessages[0].content).toBe('full output content here');
     });
 
-    await cm.flushPendingSummaries();
-    const result = cm.assemble();
-    expect(result[0].content).toBe('question');
-    expect(result[2].content).toBe('answer');
-  });
+    it('compact switches old tool messages to summary', () => {
+        for (let r = 0; r < 5; r++) {
+            cm.append(userMsg(`q${r}`));
+            cm.append(assistantMsg(`a${r}`));
+            cm.append(toolMsg(
+                `round-${r}-output-here-very-long`,
+                `call_${r}`,
+                'run_command',
+                `exit=0 | round ${r} summary`,
+                0,
+                `key: round-${r}`,
+            ));
+        }
 
-  // Test #10
-  it('assemble returns raw version when summary not yet complete', () => {
-    cm.append(toolMsg('ORIGINAL_LONG_OUTPUT', 'call_1'));
-    cm.scheduleSummarize('call_1', 'run_command', {
-      content: 'ORIGINAL_LONG_OUTPUT',
-      isError: false,
+        cm.compact();
+        const result = cm.assemble();
+        const toolMessages = result.filter(m => m.role === 'tool');
+
+        // Oldest tool (r=0) should be switched to summary
+        expect(toolMessages[0].content).toContain('exit=0 | round 0 summary');
+        // Latest tool (r=4) should be intact
+        expect(toolMessages[4].content).toBe('round-4-output-here-very-long');
     });
 
-    // Don't await flush — just assemble immediately
-    const result = cm.assemble();
-    const toolMessages = result.filter((m) => m.role === 'tool');
-    expect(toolMessages).toHaveLength(1);
-    expect(typeof toolMessages[0].content).toBe('string');
-  });
+    // === Compact: pin ===
 
-  // Test #11
-  it('mixed state: some summaries complete, some pending', async () => {
-    let resolveDelayed!: (value: string) => void;
-    const delayed = new Promise<string>((resolve) => { resolveDelayed = resolve; });
+    it('pinned messages are never compacted', () => {
+        for (let r = 0; r < 5; r++) {
+            cm.append(userMsg(`q${r}`));
+            cm.append(assistantMsg(`a${r}`));
+            cm.append(toolMsg(
+                `round-${r}-output`,
+                `call_${r}`,
+                'run_command',
+                `exit=0 | round ${r} summary`,
+                0,
+                `key: round-${r}`,
+            ));
+        }
 
-    const mock = mockSummarizer.summarize as ReturnType<typeof vi.fn>;
-    mock.mockResolvedValueOnce('Summary fast')
-      .mockReturnValueOnce(delayed);
+        // Pin the oldest tool message (index 2 in flow: user=0, asst=1, tool=2)
+        cm.pin(2);
 
-    cm.append(toolMsg('LONG_A', 'call_a'));
-    cm.append(toolMsg('LONG_B', 'call_b'));
+        cm.compact();
+        const result = cm.assemble();
+        const toolMessages = result.filter(m => m.role === 'tool');
 
-    cm.scheduleSummarize('call_a', 'tool', { content: 'A'.repeat(500), isError: false });
-    cm.scheduleSummarize('call_b', 'tool', { content: 'B'.repeat(500), isError: false });
-
-    // Wait for only the first summary to complete (delayed second)
-    await new Promise((r) => setTimeout(r, 10));
-
-    const result = cm.assemble();
-    const toolContents = result.filter((m) => m.role === 'tool').map((m) => m.content);
-
-    // First should be summarized, second still raw
-    expect(toolContents).toContain('Summary fast');
-    expect(toolContents).toContain('LONG_B');
-
-    // Clean up
-    resolveDelayed('Summary delayed');
-    await cm.flushPendingSummaries();
-  });
-
-  // === Token Budget Control ===
-
-  // Test #12
-  it('preserves all messages when under budget', () => {
-    const cmLarge = createContextManager({ ...CONTEXT_CONFIG, max_context_tokens: 100000 }, mockSummarizer);
-
-    for (let i = 0; i < 5; i++) {
-      cmLarge.append(userMsg(`message ${i}`));
-    }
-
-    expect(cmLarge.assemble()).toHaveLength(5);
-  });
-
-  // Test #13
-  it('removes old tool messages when over budget', () => {
-    const cmTight = createContextManager({ ...CONTEXT_CONFIG, max_context_tokens: 200 }, mockSummarizer);
-
-    for (let i = 0; i < 50; i++) {
-      cmTight.append(toolMsg(`output ${i} `.repeat(50), `call_${i}`));
-    }
-
-    const result = cmTight.assemble();
-    expect(result.length).toBeLessThan(50);
-  });
-
-  // Test #14
-  it('removes oldest tool messages first', () => {
-    const cmTight = createContextManager({ ...CONTEXT_CONFIG, max_context_tokens: 300 }, mockSummarizer);
-
-    cmTight.append(toolMsg('old tool output', 'call_1'));
-    cmTight.append(userMsg('important question'));
-    cmTight.append(assistantMsg('important answer'));
-
-    const result = cmTight.assemble();
-    const roles = result.map((m) => m.role);
-
-    expect(roles).not.toContain('tool');
-    expect(roles).toContain('user');
-    expect(roles).toContain('assistant');
-  });
-
-  // Test #15
-  it('merges old user+assistant pairs into state layer when no tool messages to compress', () => {
-    const cmTight = createContextManager({ ...CONTEXT_CONFIG, max_context_tokens: 300 }, mockSummarizer);
-
-    cmTight.append(userMsg('q1'));
-    cmTight.append(assistantMsg('a1'));
-    cmTight.append(userMsg('q2'));
-    cmTight.append(assistantMsg('a2'));
-    cmTight.append(userMsg('q3'));
-    cmTight.append(assistantMsg('a3'));
-    cmTight.append(userMsg('q4'));
-    cmTight.append(assistantMsg('a4'));
-
-    const result = cmTight.assemble();
-    const stateMsg = result.find((m) => m.role === 'system');
-    expect(stateMsg).toBeDefined();
-    const stateContent = JSON.parse(stateMsg!.content!);
-    expect(stateContent).toHaveProperty('compressed_history');
-  });
-
-  // Test #16
-  it('truncates very long single tool messages to fit budget', () => {
-    const cmTight = createContextManager({ ...CONTEXT_CONFIG, max_context_tokens: 100 }, mockSummarizer);
-
-    cmTight.append(toolMsg('X'.repeat(5000), 'call_1'));
-    cmTight.append(userMsg('hello'));
-
-    const result = cmTight.assemble();
-    expect(result.some((m) => m.role === 'user')).toBe(true);
-  });
-
-  // Test #17
-  it('preserves state layer when compressing tool messages', () => {
-    const cmTight = createContextManager({ ...CONTEXT_CONFIG, max_context_tokens: 300 }, mockSummarizer);
-
-    cmTight.setState('task', 'important debug session');
-    cmTight.append(toolMsg('old output', 'call_1'));
-    cmTight.append(toolMsg('another', 'call_2'));
-    cmTight.append(toolMsg('more', 'call_3'));
-    cmTight.append(userMsg('current question'));
-
-    const result = cmTight.assemble();
-    const stateMsg = result.find((m) =>
-      m.role === 'system' && m.content?.includes('important debug session'),
-    );
-    expect(stateMsg).toBeDefined();
-  });
-
-  // Test #18
-  it('token count drops after summaries complete', async () => {
-    const cmTight = createContextManager({ ...CONTEXT_CONFIG, max_context_tokens: 500 }, mockSummarizer);
-
-    cmTight.append(toolMsg('X'.repeat(2000), 'call_1'));
-    cmTight.scheduleSummarize('call_1', 'tool', {
-      content: 'X'.repeat(2000),
-      isError: false,
+        // Pinned message (oldest) should still have full content
+        expect(toolMessages[0].content).toBe('round-0-output');
+        // Unpinned old messages should be summarized
+        expect(toolMessages[1].content).toContain('exit=0 | round 1 summary');
     });
 
-    const beforeTokens = cmTight.assemble().reduce((sum, m) => {
-      const c = typeof m.content === 'string' ? m.content : '';
-      return sum + Math.ceil(c.length / 4);
-    }, 0);
+    it('unpin allows compaction again', () => {
+        for (let r = 0; r < 5; r++) {
+            cm.append(userMsg(`q${r}`));
+            cm.append(assistantMsg(`a${r}`));
+            cm.append(toolMsg(`round-${r}-output`, `call_${r}`, 'run_command', `summary-${r}`, 0));
+        }
 
-    await cmTight.flushPendingSummaries();
+        cm.pin(2);
+        cm.unpin(2);
+        cm.compact();
 
-    const afterTokens = cmTight.assemble().reduce((sum, m) => {
-      const c = typeof m.content === 'string' ? m.content : '';
-      return sum + Math.ceil(c.length / 4);
-    }, 0);
+        const result = cm.assemble();
+        const toolMessages = result.filter(m => m.role === 'tool');
+        // Now the oldest should be summarized since it's unpinned
+        expect(toolMessages[0].content).toContain('summary-0');
+    });
 
-    expect(afterTokens).toBeLessThan(beforeTokens);
-  });
+    // === Compact: dedup ===
 
-  // === State Layer ===
+    it('deduplicates adjacent tool messages with same summary', () => {
+        cm.append(userMsg('q'));
+        cm.append(assistantMsg('a'));
+        cm.append(toolMsg('output-1', 'call_1', 'run_command', 'exit=0 | GPU 78%'));
+        cm.append(assistantMsg('a2'));
+        cm.append(toolMsg('output-2', 'call_2', 'run_command', 'exit=0 | GPU 78%'));
+        cm.append(assistantMsg('a3'));
+        cm.append(toolMsg('output-3', 'call_3', 'run_command', 'exit=0 | GPU 78%'));
+        cm.append(assistantMsg('a4'));
+        cm.append(toolMsg('output-4', 'call_4', 'run_command', 'exit=0 | GPU 78%'));
 
-  // Test #19
-  it('no state layer present when setState is never called', () => {
-    cm.append(userMsg('hello'));
-    const result = cm.assemble();
-    expect(result.every((m) => m.role !== 'system')).toBe(true);
-  });
+        cm.compact();
+        const result = cm.assemble();
+        const toolMessages = result.filter(m => m.role === 'tool');
 
-  // Test #20
-  it('setState creates a state layer system message', () => {
-    cm.setState('task', 'debug OOM');
-    const result = cm.assemble();
-    const stateMsg = result.find((m) => m.role === 'system');
-    expect(stateMsg).toBeDefined();
-    expect(stateMsg!.content).toContain('debug OOM');
-    expect(stateMsg!.content).toContain('task');
-  });
+        // 4 identical summaries → should be reduced
+        expect(toolMessages.length).toBeLessThan(4);
+        // Should have a system note about merging
+        const notes = result.filter(m => m.role === 'system' && m.content?.includes('merged'));
+        expect(notes.length).toBeGreaterThanOrEqual(1);
+    });
 
-  // Test #21
-  it('multiple setState calls merge keys', () => {
-    cm.setState('a', 1);
-    cm.setState('b', 2);
-    const state = cm.getState();
-    expect(state).toEqual({ a: 1, b: 2 });
-  });
+    it('does not deduplicate different summaries', () => {
+        cm.append(userMsg('q'));
+        cm.append(assistantMsg('a'));
+        cm.append(toolMsg('output-1', 'call_1', 'run_command', 'exit=0 | GPU 78%'));
+        cm.append(assistantMsg('a2'));
+        cm.append(toolMsg('output-2', 'call_2', 'run_command', 'exit=1 | CUDA OOM'));
+        cm.append(assistantMsg('a3'));
 
-  // Test #22
-  it('setState overwrites same key', () => {
-    cm.setState('a', 1);
-    cm.setState('a', 2);
-    expect(cm.getState().a).toBe(2);
-  });
+        cm.compact();
+        const result = cm.assemble();
+        const toolMessages = result.filter(m => m.role === 'tool');
+        // Different summaries, should not dedup
+        expect(toolMessages).toHaveLength(2);
+    });
 
-  // Test #23
-  it('compression updates state layer with compressed history', () => {
-    const cmTight = createContextManager({ ...CONTEXT_CONFIG, max_context_tokens: 200 }, mockSummarizer);
+    // === Compact: budget ===
 
-    cmTight.append(userMsg('q1'));
-    cmTight.append(assistantMsg('a1'));
-    cmTight.append(userMsg('q2'));
-    cmTight.append(assistantMsg('a2'));
-    cmTight.append(userMsg('q3'));
+    it('removes oldest unpinned tool messages when over budget', () => {
+        const cmTight = createContextManager({ max_context_tokens: 50, recent_rounds: 3 });
 
-    cmTight.assemble(); // triggers compression
+        for (let i = 0; i < 10; i++) {
+            cmTight.append(toolMsg(`output ${i} `.repeat(20), `call_${i}`, 'run_command', `summary-${i}`));
+        }
 
-    const state = cmTight.getState();
-    expect(state).toHaveProperty('compressed_history');
-  });
+        cmTight.compact();
+        const result = cmTight.assemble();
+        expect(result.length).toBeLessThan(10);
+    });
 
-  // Test #24
-  it('getState returns current state object', () => {
-    cm.setState('x', 'value');
-    expect(cm.getState()).toEqual({ x: 'value' });
-  });
+    it('throws BudgetError when no more tool messages to remove', () => {
+        const cmTight = createContextManager({ max_context_tokens: 1, recent_rounds: 3 });
+
+        // Add only user+assistant (no tool messages to evict)
+        cmTight.append(userMsg('important question that cannot be removed'));
+
+        expect(() => cmTight.compact()).toThrow(/BudgetError/);
+    });
+
+    it('user/assistant messages are never removed', () => {
+        const cmTight = createContextManager({ max_context_tokens: 100, recent_rounds: 3 });
+
+        cmTight.append(userMsg('important'));
+        cmTight.append(assistantMsg('response'));
+        cmTight.append(toolMsg('big output '.repeat(50), 'call_1', 'run_command', 'summary'));
+
+        cmTight.compact();
+        const result = cmTight.assemble();
+        const roles = result.map(m => m.role);
+        expect(roles).toContain('user');
+        expect(roles).toContain('assistant');
+    });
+
+    // === State Layer ===
+
+    it('no state layer present when setState is never called', () => {
+        cm.append(userMsg('hello'));
+        const result = cm.assemble();
+        expect(result.every(m => m.role !== 'system')).toBe(true);
+    });
+
+    it('setState creates a state layer system message', () => {
+        cm.setState('task', 'debug OOM');
+        const result = cm.assemble();
+        const stateMsg = result.find(m => m.role === 'system');
+        expect(stateMsg).toBeDefined();
+        expect(stateMsg!.content).toContain('debug OOM');
+    });
+
+    it('multiple setState calls merge keys', () => {
+        cm.setState('a', 1);
+        cm.setState('b', 2);
+        const state = cm.getState();
+        expect(state).toEqual({ a: 1, b: 2 });
+    });
+
+    it('setState overwrites same key', () => {
+        cm.setState('a', 1);
+        cm.setState('a', 2);
+        expect(cm.getState().a).toBe(2);
+    });
+
+    it('getState returns a shallow copy', () => {
+        cm.setState('x', 'value');
+        const s1 = cm.getState();
+        s1.x = 'mutated';
+        expect(cm.getState().x).toBe('value');
+    });
+
+    // === Rollback ===
+
+    it('truncateTo removes messages beyond count', () => {
+        cm.append(userMsg('a'));
+        cm.append(userMsg('b'));
+        cm.append(userMsg('c'));
+        cm.truncateTo(2);
+        expect(cm.assemble()).toHaveLength(2);
+    });
+
+    it('truncateTo with count >= length does nothing', () => {
+        cm.append(userMsg('a'));
+        cm.truncateTo(5);
+        expect(cm.assemble()).toHaveLength(1);
+    });
 });

@@ -1,215 +1,188 @@
 // src/context/manager.ts
-import type { ContextManager, Summarizer, ContextConfig } from './types';
+import type { ContextManager, ContextConfig } from './types';
 import type { Message } from '../llm/types';
-import type { ToolResult } from '../tools/types';
-import { estimateTokens } from './token-estimator';
+import { estimateTokens } from './token-counter';
 
-/**
- * Per-message token overhead to account for API message framing
- * (role labels, JSON structure, tool_call_id/name fields, etc.).
- * This is applied on top of estimateTokens() for budget enforcement
- * to ensure the assembled context fits within the model's token limit.
- */
-const MSG_OVERHEAD = 92;
+interface FlowEntry {
+    message: Message;
+    round: number;
+    pinned: boolean;
+}
 
-export function createContextManager(
-  config: ContextConfig,
-  summarizer: Summarizer,
-): ContextManager {
-  const flowMessages: Message[] = [];
-  const state: Record<string, unknown> = {};
-  const pendingSummaries = new Map<string, Promise<void>>();
-  let knowledgeContent = '';
-  let cancelled = false;
-
-  const maxTokens = config.max_context_tokens > 0
-    ? config.max_context_tokens
-    : 102400; // 80% of 128K default
-
-  function append(message: Message): void {
-    flowMessages.push(message);
-  }
-
-  function countEffectiveTokens(): number {
-    return estimateTokens(buildMessages()) + flowMessages.length * MSG_OVERHEAD;
-  }
-
-  function assemble(): Message[] {
-    applyBudget();
-    return buildMessages();
-  }
-
-  function buildMessages(): Message[] {
-    const result: Message[] = [];
-
-    // Layer 1: Knowledge (if any)
-    if (knowledgeContent) {
-      result.push({ role: 'system', content: knowledgeContent });
+export class BudgetError extends Error {
+    constructor(msg: string) {
+        super(msg);
+        this.name = 'BudgetError';
     }
+}
 
-    // Layer 2: State (if any keys set)
-    if (Object.keys(state).length > 0) {
-      result.push({ role: 'system', content: JSON.stringify(state) });
-    }
+export function createContextManager(config: ContextConfig, model = 'gpt-4o'): ContextManager {
+    const flow: FlowEntry[] = [];
+    const state: Record<string, unknown> = {};
+    let currentRound = 0;
+    let cancelled = false;
 
-    // Layer 3: Flow
-    for (const msg of flowMessages) {
-      result.push({ ...msg });
-    }
+    const maxTokens = config.max_context_tokens > 0
+        ? config.max_context_tokens
+        : 102400;
 
-    return result;
-  }
-
-  function isProtectedToolMessage(msg: Message): boolean {
-    return (
-      msg.role === 'tool' &&
-      msg.tool_call_id != null &&
-      pendingSummaries.has(msg.tool_call_id)
-    );
-  }
-
-  function applyBudget(): void {
-    let currentTokens = countEffectiveTokens();
-
-    while (currentTokens > maxTokens && flowMessages.length > 0) {
-      // Try to find a removable tool message (oldest first), skipping protected ones
-      let removed = false;
-      for (let i = 0; i < flowMessages.length; i++) {
-        if (flowMessages[i].role === 'tool' && !isProtectedToolMessage(flowMessages[i])) {
-          flowMessages.splice(i, 1);
-          removed = true;
-          break;
+    function append(message: Message): void {
+        if (message.role === 'user') {
+            currentRound++;
         }
-      }
+        flow.push({ message: { ...message }, round: currentRound, pinned: false });
+    }
 
-      // If no tool messages to remove, compress oldest user+assistant pair to state
-      if (!removed) {
-        if (!compressOldestPairToState()) {
-          // Nothing could be removed — budget is tight but we can't reduce further
-          break;
+    function assemble(): Message[] {
+        const result: Message[] = [];
+
+        // Layer 1: State
+        if (Object.keys(state).length > 0) {
+            result.push({ role: 'system', content: JSON.stringify(state) });
         }
-      }
 
-      const newTokens = countEffectiveTokens();
-      if (newTokens >= currentTokens) {
-        // No progress — stop to avoid infinite loop
-        break;
-      }
-      currentTokens = newTokens;
-    }
-
-    // Final safety: if a single message still exceeds budget, truncate it
-    if (flowMessages.length === 1 && countEffectiveTokens() > maxTokens) {
-      const msg = flowMessages[0];
-      if (msg.role === 'tool' && msg.content) {
-        const maxChars = maxTokens * 4;
-        if (msg.content.length > maxChars) {
-          msg.content = msg.content.slice(0, maxChars - 3) + '...';
+        // Layer 2: Flow
+        for (const entry of flow) {
+            result.push({ ...entry.message });
         }
-      }
+
+        return result;
     }
-  }
 
-  /**
-   * Find the oldest user+assistant pair and compress it into the state layer.
-   * Returns true if a pair was compressed, false otherwise.
-   */
-  function compressOldestPairToState(): boolean {
-    // Find the oldest user message followed by an assistant message
-    for (let i = 0; i < flowMessages.length - 1; i++) {
-      if (flowMessages[i].role === 'user' && flowMessages[i + 1].role === 'assistant') {
-        const userContent = flowMessages[i].content ?? '';
-        const assistantContent = flowMessages[i + 1].content ?? '';
+    function compact(): void {
+        if (cancelled) return;
 
-        if (!state['compressed_history']) {
-          state['compressed_history'] = [];
+        // Phase 1: Age-based summarization — switch old tool messages to summary
+        for (const entry of flow) {
+            if (entry.pinned) continue;
+            if (entry.message.role !== 'tool') continue;
+            if (currentRound - entry.round < config.recent_rounds) continue;
+
+            const msgAny = entry.message as Record<string, unknown>;
+            const summary = msgAny.summary as string | undefined;
+            const keyOutput = msgAny.keyOutput as string | undefined;
+            if (summary) {
+                if (entry.message.content) {
+                    msgAny._originalContent = entry.message.content;
+                }
+                entry.message.content = summary + (keyOutput ? ` | ${keyOutput.slice(0, 200)}` : '');
+            }
         }
-        (state['compressed_history'] as Array<{ u: string; a: string }>).push({
-          u: userContent.slice(0, 200),
-          a: assistantContent.slice(0, 200),
-        });
-        // Keep only last 10 compressed entries
-        const ch = state['compressed_history'] as unknown[];
-        if (ch.length > 10) ch.shift();
 
-        flowMessages.splice(i, 2);
-        return true;
-      }
-    }
+        // Phase 2: Dedup — merge tool messages with identical summaries
+        // Walk forward, collecting tool messages; when one matches the last seen
+        // summary, drop the earlier one and insert a merge note.
+        let lastToolSummary: string | undefined;
+        let lastToolIdx = -1;
 
-    // Fallback: try to remove the first message that isn't protected
-    for (let i = 0; i < flowMessages.length; i++) {
-      if (!isProtectedToolMessage(flowMessages[i])) {
-        flowMessages.splice(i, 1);
-        return true;
-      }
-    }
+        for (let i = 0; i < flow.length; i++) {
+            if (flow[i].pinned || flow[i].message.role !== 'tool') continue;
 
-    // Nothing could be removed
-    return false;
-  }
+            const summary = (flow[i].message as Record<string, unknown>).summary as string | undefined;
+            if (!summary) {
+                lastToolSummary = undefined;
+                lastToolIdx = -1;
+                continue;
+            }
 
-  function scheduleSummarize(messageId: string, toolName: string, result: ToolResult): void {
-    if (cancelled) return;
+            if (lastToolSummary !== undefined && summary === lastToolSummary) {
+                // Found duplicate — keep the later one (at index i), remove the earlier
+                const startRound = flow[lastToolIdx].round;
+                const endRound = flow[i].round;
 
-    const promise = summarizer
-      .summarize(toolName, result)
-      .then((summary) => {
-        // Replace the tool message content in the flow layer
-        for (const msg of flowMessages) {
-          if (msg.role === 'tool' && msg.tool_call_id === messageId) {
-            msg.content = summary;
-            break;
-          }
+                // Insert merge note before the later tool
+                flow.splice(i, 0, {
+                    message: {
+                        role: 'system',
+                        content: `[R${startRound}-R${endRound}: 2 identical results merged]`,
+                    },
+                    round: endRound,
+                    pinned: false,
+                });
+                // After insert, the later tool is now at i + 1
+
+                // Remove the earlier duplicate at lastToolIdx
+                flow.splice(lastToolIdx, 1);
+                // After removal, the note shifts to lastToolIdx, and the later tool
+                // shifts to lastToolIdx + 1.
+                // The current position in the loop (i) needs adjustment:
+                // We inserted at i, so the kept tool was at i + 1.
+                // Then we removed at lastToolIdx (< i), so everything between
+                // lastToolIdx and i shifted left by 1.
+                // The kept tool is now at position i (since i moved left by 1).
+                // Update tracking to point at the kept tool.
+                lastToolSummary = summary;
+                lastToolIdx = i; // the kept tool is now at index i
+            } else {
+                lastToolSummary = summary;
+                lastToolIdx = i;
+            }
         }
-      })
-      .catch(() => {
-        // Summary failed — original content stays, which is fine
-      })
-      .finally(() => {
-        pendingSummaries.delete(messageId);
-      });
 
-    pendingSummaries.set(messageId, promise);
-  }
+        // Phase 3: Budget enforcement
+        let currentTokens = estimateTokens(assemble(), model);
+        while (currentTokens > maxTokens) {
+            // Find oldest unpinned tool message
+            let removed = false;
+            for (let k = 0; k < flow.length; k++) {
+                if (flow[k].pinned) continue;
+                if (flow[k].message.role === 'tool') {
+                    flow.splice(k, 1);
+                    removed = true;
+                    break;
+                }
+            }
 
-  async function flushPendingSummaries(): Promise<void> {
-    const promises = Array.from(pendingSummaries.values());
-    await Promise.allSettled(promises);
-  }
+            if (!removed) {
+                throw new BudgetError(
+                    `BudgetError: Context budget exceeded (${currentTokens} > ${maxTokens}) with no removable tool messages. ` +
+                    `Try increasing max_context_tokens or reducing recent_rounds.`,
+                );
+            }
 
-  function setState(key: string, value: unknown): void {
-    state[key] = value;
-  }
-
-  function getState(): Record<string, unknown> {
-    return { ...state };
-  }
-
-  function truncateTo(count: number): void {
-    if (count < flowMessages.length) {
-      flowMessages.length = count;
+            currentTokens = estimateTokens(assemble(), model);
+        }
     }
-  }
 
-  function setKnowledge(content: string): void {
-    knowledgeContent = content;
-  }
+    function pin(index: number): void {
+        if (index >= 0 && index < flow.length) {
+            flow[index].pinned = true;
+        }
+    }
 
-  function cancelAll(): void {
-    cancelled = true;
-    summarizer.cancelAll();
-  }
+    function unpin(index: number): void {
+        if (index >= 0 && index < flow.length) {
+            flow[index].pinned = false;
+        }
+    }
 
-  return {
-    append,
-    assemble,
-    scheduleSummarize,
-    flushPendingSummaries,
-    setState,
-    getState,
-    truncateTo,
-    setKnowledge,
-    cancelAll,
-  };
+    function setState(key: string, value: unknown): void {
+        state[key] = value;
+    }
+
+    function getState(): Record<string, unknown> {
+        return { ...state };
+    }
+
+    function truncateTo(count: number): void {
+        if (count < flow.length) {
+            flow.length = count;
+        }
+    }
+
+    function cancelAll(): void {
+        cancelled = true;
+    }
+
+    return {
+        append,
+        assemble,
+        compact,
+        pin,
+        unpin,
+        setState,
+        getState,
+        truncateTo,
+        cancelAll,
+    };
 }
