@@ -12,6 +12,7 @@ export interface ToolEvidence {
 export type SubagentStatus = 'pending' | 'running' | 'completed' | 'failed' | 'timeout' | 'cancelled';
 
 export interface SubagentResult {
+  id: string;
   status: SubagentStatus;
   exitCode: number;
   llmSummary: string;
