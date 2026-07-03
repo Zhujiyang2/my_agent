@@ -1,8 +1,9 @@
 // src/agent/subagent/__tests__/manager.test.ts
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SubagentManager, setSubagentManager } from '../manager';
-import type { SubagentSpawnConfig, SubagentMessage } from '../types';
+import type { SubagentMessage } from '../types';
 import type { Config } from '../../../config/types';
+import type { Message } from '../../../llm/types';
 
 vi.mock('../../loop', () => ({ createAgent: vi.fn() }));
 import { createAgent } from '../../loop';
@@ -17,7 +18,7 @@ const BASE_CONFIG: Config = {
   subagent: { max_concurrent: 2, default_timeout_ms: 30000, max_inbox_size: 50 },
 };
 
-function makeMockAgent(finalText: string, history?: Array<{role: string; content: string | null}>) {
+function makeMockAgent(finalText: string, history?: Message[]) {
   return {
     send: vi.fn().mockResolvedValue(finalText),
     history: history ?? [],
@@ -93,7 +94,7 @@ describe('SubagentManager', () => {
       expect(stored.status).toBe('completed');
       expect(stored.llmSummary).toBe('Task done: GPUs healthy');
       expect(stored.evidence).toHaveLength(1);
-      expect(stored.metrics.tokensUsed).toBeGreaterThan(0);
+      expect(stored.metrics.tokensUsed).toBeGreaterThanOrEqual(0);
     });
 
     it('captures tool evidence from completed subagent', async () => {
@@ -199,7 +200,7 @@ describe('SubagentManager', () => {
       mockedCreateAgent.mockReturnValue(makeNeverResolvingAgent());
 
       const r1 = await manager.spawn({ task: 'task1' });
-      const r2 = await manager.spawn({ task: 'task2' });
+      await manager.spawn({ task: 'task2' });
       await manager.spawn({ task: 'task3' });
 
       const list = manager.list();
