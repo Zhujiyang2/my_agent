@@ -57,5 +57,6 @@ describe('runCommandTool', () => {
   it('returns exitCode 1 and isError for failed commands', async () => {
     const result = await runCommandTool.handler({ command: 'node -e "process.exit(1)"' });
     expect(result.exitCode).toBe(1);
+    expect(result.isError).toBe(true);
   });
 });

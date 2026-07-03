@@ -33,6 +33,7 @@ export const writeFileTool: ToolDefinition = {
         content: msg,
         summary: `wrote ${content.split('\n').length} lines to ${filePath}`,
         exitCode: 0,
+        keyOutput: msg,
       };
     } catch (e) {
       return {
