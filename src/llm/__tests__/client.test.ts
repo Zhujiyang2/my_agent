@@ -41,7 +41,7 @@ describe('chatStream', () => {
     global.fetch = fetchMock;
 
     const tokens: string[] = [];
-    await chatStream(TEST_CONFIG, TEST_MESSAGES, (t) => tokens.push(t));
+    await chatStream(TEST_CONFIG, TEST_MESSAGES, undefined, (t) => tokens.push(t));
 
     const callUrl = fetchMock.mock.calls[0][0];
     const callOptions = fetchMock.mock.calls[0][1];
@@ -75,7 +75,7 @@ describe('chatStream', () => {
     global.fetch = fetchMock;
 
     const tokens: string[] = [];
-    await chatStream(TEST_CONFIG, TEST_MESSAGES, (t) => tokens.push(t));
+    await chatStream(TEST_CONFIG, TEST_MESSAGES, undefined, (t) => tokens.push(t));
 
     expect(tokens).toEqual(['Hel', 'lo']);
   });
@@ -87,7 +87,7 @@ describe('chatStream', () => {
     global.fetch = fetchMock;
 
     await expect(
-      chatStream(TEST_CONFIG, TEST_MESSAGES, () => {})
+      chatStream(TEST_CONFIG, TEST_MESSAGES, undefined, () => {})
     ).rejects.toThrow(/401/);
   });
 
@@ -107,7 +107,7 @@ describe('chatStream', () => {
     global.fetch = fetchMock;
 
     const tokens: string[] = [];
-    await chatStream(TEST_CONFIG, TEST_MESSAGES, (t) => tokens.push(t));
+    await chatStream(TEST_CONFIG, TEST_MESSAGES, undefined, (t) => tokens.push(t));
 
     expect(tokens).toEqual(['ok']);
   });
@@ -124,8 +124,49 @@ describe('chatStream', () => {
     );
     global.fetch = fetchMock;
 
-    const promise = chatStream(TEST_CONFIG, TEST_MESSAGES, (_token) => {}, controller.signal);
+    const promise = chatStream(TEST_CONFIG, TEST_MESSAGES, undefined, (_token) => {}, controller.signal);
     controller.abort();
     await expect(promise).rejects.toThrow(/abort/i);
+  });
+
+  it('accumulates tool_calls from stream deltas', async () => {
+    const sseBody = [
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"run_command","arguments":""}}]},"index":0,"finish_reason":null}]}',
+      '',
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"command\\":"}}]},"index":0,"finish_reason":null}]}',
+      '',
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\"echo hi\\"}"}}]},"index":0,"finish_reason":"tool_calls"}]}',
+      '',
+    ].join('\n');
+
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(sseBody, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+    );
+    global.fetch = fetchMock;
+
+    const tokens: string[] = [];
+    const result = await chatStream(TEST_CONFIG, TEST_MESSAGES, undefined, (t) => tokens.push(t));
+
+    expect(tokens).toEqual([]);
+    expect(result.toolCalls).toHaveLength(1);
+    expect(result.toolCalls[0].id).toBe('call_1');
+    expect(result.toolCalls[0].function.name).toBe('run_command');
+    expect(result.toolCalls[0].function.arguments).toBe('{"command":"echo hi"}');
+  });
+
+  it('returns empty toolCalls for text-only response', async () => {
+    const sseBody = [
+      'data: {"choices":[{"delta":{"content":"Hello"},"index":0,"finish_reason":"stop"}]}',
+      '',
+    ].join('\n');
+
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(sseBody, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+    );
+    global.fetch = fetchMock;
+
+    const result = await chatStream(TEST_CONFIG, TEST_MESSAGES, undefined, () => {});
+    expect(result.toolCalls).toEqual([]);
+    expect(result.content).toBe('Hello');
   });
 });
