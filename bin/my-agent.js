@@ -5,7 +5,7 @@
 // to load the TS file.
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -14,7 +14,7 @@ const tsFile = path.join(__dirname, 'my-agent.ts');
 
 // Resolve tsx from local project node_modules, fallback to global
 const tsxLocal = path.join(projectRoot, 'node_modules', 'tsx', 'dist', 'esm', 'index.mjs');
-const tsxImport = existsSync(tsxLocal) ? tsxLocal : 'tsx';
+const tsxImport = existsSync(tsxLocal) ? pathToFileURL(tsxLocal).href : 'tsx';
 
 const child = spawn(process.execPath, ['--import', tsxImport, tsFile], {
   stdio: 'inherit',
