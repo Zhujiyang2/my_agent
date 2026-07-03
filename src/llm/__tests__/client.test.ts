@@ -10,8 +10,14 @@ const TEST_CONFIG: Config = {
   api_key: 'sk-test',
   tools: {
     max_loop_rounds: 10,
+    max_consecutive_failures: 3,
     command_timeout: 60,
     background_timeout: 0,
+  },
+  context: {
+    max_context_tokens: 100000,
+    flow_rounds: 10,
+    summarizer_model: '',
   },
 };
 

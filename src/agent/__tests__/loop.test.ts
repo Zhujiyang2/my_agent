@@ -24,6 +24,11 @@ const TEST_CONFIG: Config = {
     command_timeout: 60,
     background_timeout: 0,
   },
+  context: {
+    max_context_tokens: 100000,
+    flow_rounds: 10,
+    summarizer_model: '',
+  },
 };
 
 function makeTextResult(content: string): StreamResult {
