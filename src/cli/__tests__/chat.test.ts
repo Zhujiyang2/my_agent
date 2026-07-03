@@ -4,6 +4,7 @@ import {
   formatWelcome,
   formatUserMessage,
   formatAssistantMessage,
+  formatToolCall,
   promptConfirm,
   WELCOME_ART,
 } from '../chat';
@@ -69,5 +70,30 @@ describe('promptConfirm', () => {
     expect(result).toContain('high risk');
     expect(result).toContain('[y]');
     expect(result).toContain('[n]');
+  });
+});
+
+describe('formatToolCall', () => {
+  it('shows tool name and key arguments', () => {
+    const result = formatToolCall('write_file', { path: '/tmp/test.py', content: 'print(1)' });
+    expect(result).toContain('write_file');
+    expect(result).toContain('/tmp/test.py');
+  });
+
+  it('shows run_command with the command', () => {
+    const result = formatToolCall('run_command', { command: 'python test.py' });
+    expect(result).toContain('run_command');
+    expect(result).toContain('python test.py');
+  });
+
+  it('shows glob with pattern', () => {
+    const result = formatToolCall('glob', { pattern: '*.py' });
+    expect(result).toContain('glob');
+    expect(result).toContain('*.py');
+  });
+
+  it('handles empty args gracefully', () => {
+    const result = formatToolCall('echo', {});
+    expect(result).toContain('echo');
   });
 });

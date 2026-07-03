@@ -2,6 +2,7 @@
 
 export interface ToolsConfig {
   max_loop_rounds: number;
+  max_consecutive_failures: number;
   command_timeout: number;
   background_timeout: number;
 }

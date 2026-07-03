@@ -8,6 +8,7 @@ import { defaultRegistry } from '../tools/registry';
 
 export interface AgentOptions {
   onToken?: (token: string) => void;
+  onToolCall?: (name: string, args: Record<string, unknown>) => void;
   registry?: ToolRegistry;
 }
 
@@ -38,8 +39,12 @@ export function createAgent(config: Config, options: AgentOptions = {}): AgentSe
     history.push({ role: 'user', content: input });
 
     const maxRounds = config.tools.max_loop_rounds;
+    const maxConsecutiveFailures = config.tools.max_consecutive_failures;
     const allTools = registry.getAll();
     const toolDefs = allTools.length > 0 ? toolsToOpenAI(allTools) : undefined;
+
+    let lastResult: { toolCalls: Array<{ function: { name: string } }> } | undefined;
+    let consecutiveFailures = 0;
 
     try {
       for (let round = 0; round < maxRounds; round++) {
@@ -50,6 +55,7 @@ export function createAgent(config: Config, options: AgentOptions = {}): AgentSe
         (token) => options.onToken?.(token),
         signal,
       );
+      lastResult = result;
 
       if (result.toolCalls.length === 0) {
         history.push({ role: 'assistant', content: result.content });
@@ -76,6 +82,7 @@ export function createAgent(config: Config, options: AgentOptions = {}): AgentSe
         } else {
           try {
             const args = JSON.parse(tc.function.arguments || '{}');
+            options.onToolCall?.(tc.function.name, args);
 
             // High-risk safety check for run_command — always enforced
             if (
@@ -122,13 +129,35 @@ export function createAgent(config: Config, options: AgentOptions = {}): AgentSe
           tool_call_id: tc.id,
           name: tc.function.name,
         });
+
+        // Track consecutive failures to detect when agent is stuck
+        if (toolResult.isError) {
+          consecutiveFailures++;
+          if (consecutiveFailures >= maxConsecutiveFailures) {
+            throw new Error(
+              `Stopped: ${consecutiveFailures} consecutive tool failures, ` +
+              `last tool: ${tc.function.name}`,
+            );
+          }
+        } else {
+          consecutiveFailures = 0;
+        }
       }
       }
 
-      throw new Error(`Exceeded maximum tool calling rounds (${maxRounds})`);
+      const lastTool = lastResult?.toolCalls[lastResult.toolCalls.length - 1];
+      throw new Error(
+        `Exceeded maximum tool calling rounds (${maxRounds}), ` +
+        `last tool: ${lastTool?.function.name ?? 'unknown'}`,
+      );
     } catch (e) {
-      // Rollback — keep history unchanged on failure
-      history.length = snapshotLength;
+      // Preserve history for limit errors (rounds/failures) — work was valid, just incomplete.
+      // Rollback only for unexpected errors (network, API, etc.)
+      const isLimitError = e instanceof Error &&
+        (e.message.startsWith('Exceeded maximum') || e.message.startsWith('Stopped:'));
+      if (!isLimitError) {
+        history.length = snapshotLength;
+      }
       throw e;
     }
   }

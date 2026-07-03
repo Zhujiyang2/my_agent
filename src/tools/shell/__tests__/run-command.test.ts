@@ -17,9 +17,11 @@ describe('runCommandTool', () => {
 
   it('executes command in a specified workdir', async () => {
     const tmp = os.tmpdir();
-    const result = await runCommandTool.handler({ command: 'echo %cd%', workdir: tmp });
+    const cwdCmd = process.platform === 'win32' ? 'echo %cd%' : 'pwd';
+    const cwdExpected = process.platform === 'win32' ? 'temp' : 'tmp';
+    const result = await runCommandTool.handler({ command: cwdCmd, workdir: tmp });
     expect(result.isError).toBeFalsy();
-    expect(result.content.toLowerCase()).toContain('temp');
+    expect(result.content.toLowerCase()).toContain(cwdExpected);
   });
 
   it('captures stderr when command fails', async () => {

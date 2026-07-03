@@ -11,6 +11,7 @@ import {
   formatWelcome,
   formatError,
   formatInfo,
+  formatToolCall,
 } from '../src/cli/chat';
 
 // Load tools — side-effect imports trigger registration into defaultRegistry
@@ -43,6 +44,9 @@ async function main(): Promise<void> {
 
   const agent = createAgent(config, {
     onToken: (token) => process.stdout.write(token),
+    onToolCall: (name, args) => {
+      console.log(formatToolCall(name, args));
+    },
   });
 
   const rl = readline.createInterface({
