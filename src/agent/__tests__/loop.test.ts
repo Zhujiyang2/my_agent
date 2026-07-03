@@ -15,6 +15,12 @@ const TEST_CONFIG: Config = {
   api_url: 'https://api.example.com/v1',
   model: 'test-model',
   api_key: 'sk-test',
+  tools: {
+    safety_mode: 'auto',
+    max_loop_rounds: 10,
+    command_timeout: 60,
+    background_timeout: 0,
+  },
 };
 
 describe('createAgent', () => {
