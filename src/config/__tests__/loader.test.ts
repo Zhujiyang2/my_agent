@@ -30,7 +30,6 @@ describe('loadConfig', () => {
     expect(result).toEqual({
       ...config,
       tools: {
-        safety_mode: 'auto',
         max_loop_rounds: 10,
         command_timeout: 60,
         background_timeout: 0,
@@ -74,7 +73,6 @@ describe('loadConfig', () => {
 
     const result = loadConfig(TEST_CONFIG_FILE);
     expect(result.tools).toEqual({
-      safety_mode: 'auto',
       max_loop_rounds: 10,
       command_timeout: 60,
       background_timeout: 0,

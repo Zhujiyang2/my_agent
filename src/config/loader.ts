@@ -46,11 +46,6 @@ export function loadConfig(filePath?: string): Config {
     model: validateStringField('model'),
     api_key: validateStringField('api_key'),
     tools: {
-      safety_mode:
-        typeof toolsCfg.safety_mode === 'string' &&
-        (toolsCfg.safety_mode === 'confirm' || toolsCfg.safety_mode === 'auto')
-          ? (toolsCfg.safety_mode as 'confirm' | 'auto')
-          : 'auto',
       max_loop_rounds:
         typeof toolsCfg.max_loop_rounds === 'number' ? toolsCfg.max_loop_rounds : 10,
       command_timeout:

@@ -52,7 +52,6 @@ async function main(): Promise<void> {
   console.log(formatWelcome());
   console.log(formatInfo(`  Model: ${config.model}`));
   console.log(formatInfo(`  API: ${config.api_url}`));
-  console.log(formatInfo(`  Safety: ${config.tools.safety_mode === 'confirm' ? 'high-risk confirmation ON' : 'auto-approve all'}`));
   console.log(formatInfo('  /exit to quit | Ctrl+C to interrupt | Ctrl+C twice to exit'));
   console.log('');
 

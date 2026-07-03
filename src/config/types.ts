@@ -1,7 +1,6 @@
 // src/config/types.ts
 
 export interface ToolsConfig {
-  safety_mode: 'confirm' | 'auto';
   max_loop_rounds: number;
   command_timeout: number;
   background_timeout: number;

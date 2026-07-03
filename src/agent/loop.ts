@@ -77,26 +77,33 @@ export function createAgent(config: Config, options: AgentOptions = {}): AgentSe
           try {
             const args = JSON.parse(tc.function.arguments || '{}');
 
-            // High-risk safety check for run_command
+            // High-risk safety check for run_command — always enforced
             if (
               tc.function.name === 'run_command' &&
               typeof args.command === 'string' &&
-              isHighRisk(args.command) &&
-              config.tools.safety_mode === 'confirm'
+              isHighRisk(args.command)
             ) {
               const cbs = getExecutorCallbacks();
-              if (cbs.onConfirm) {
-                const approved = await cbs.onConfirm(args.command, 'high_risk');
-                if (!approved) {
-                  toolResult = { content: 'Command was rejected by user.' };
-                  history.push({
-                    role: 'tool',
-                    content: toolResult.content,
-                    tool_call_id: tc.id,
-                    name: tc.function.name,
-                  });
-                  continue;
-                }
+              if (!cbs.onConfirm) {
+                toolResult = { content: 'Error: high-risk command blocked — no confirmation handler registered.' };
+                history.push({
+                  role: 'tool',
+                  content: toolResult.content,
+                  tool_call_id: tc.id,
+                  name: tc.function.name,
+                });
+                continue;
+              }
+              const approved = await cbs.onConfirm(args.command, 'high_risk');
+              if (!approved) {
+                toolResult = { content: 'Command was rejected by user.' };
+                history.push({
+                  role: 'tool',
+                  content: toolResult.content,
+                  tool_call_id: tc.id,
+                  name: tc.function.name,
+                });
+                continue;
               }
             }
 
