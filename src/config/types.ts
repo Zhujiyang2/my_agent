@@ -9,8 +9,7 @@ export interface ToolsConfig {
 
 export interface ContextConfig {
   max_context_tokens: number;   // 0 = auto (80% of model window)
-  flow_rounds: number;
-  summarizer_model: string;     // "" = reuse main model
+  recent_rounds: number;        // 保留原始输出的轮数，默认 3
 }
 
 export interface Config {

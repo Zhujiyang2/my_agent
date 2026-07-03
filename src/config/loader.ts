@@ -59,10 +59,8 @@ export function loadConfig(filePath?: string): Config {
     context: {
       max_context_tokens:
         typeof contextCfg.max_context_tokens === 'number' ? contextCfg.max_context_tokens : 0,
-      flow_rounds:
-        typeof contextCfg.flow_rounds === 'number' ? contextCfg.flow_rounds : 10,
-      summarizer_model:
-        typeof contextCfg.summarizer_model === 'string' ? contextCfg.summarizer_model : '',
+      recent_rounds:
+        typeof contextCfg.recent_rounds === 'number' ? contextCfg.recent_rounds : 3,
     },
   };
 }
