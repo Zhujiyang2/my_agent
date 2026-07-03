@@ -5,11 +5,15 @@ import { chatStream } from '../llm/client';
 import { isHighRisk, getExecutorCallbacks } from '../tools/executor';
 import type { ToolRegistry } from '../tools/registry';
 import { defaultRegistry } from '../tools/registry';
+import { createContextManager } from '../context/manager';
+import { createSummarizer } from '../context/summarizer';
+import type { ContextManager } from '../context/types';
 
 export interface AgentOptions {
   onToken?: (token: string) => void;
   onToolCall?: (name: string, args: Record<string, unknown>) => void;
   registry?: ToolRegistry;
+  contextManager?: ContextManager;
 }
 
 export interface AgentSession {
@@ -31,12 +35,20 @@ function toolsToOpenAI(
 }
 
 export function createAgent(config: Config, options: AgentOptions = {}): AgentSession {
-  const history: Message[] = [];
   const registry = options.registry ?? defaultRegistry;
 
+  const contextManager: ContextManager = options.contextManager ?? createContextManager(
+    config.context,
+    createSummarizer(config.context, {
+      api_url: config.api_url,
+      api_key: config.api_key,
+      model: config.model,
+    }),
+  );
+
   async function send(input: string, signal?: AbortSignal): Promise<string> {
-    const snapshotLength = history.length;
-    history.push({ role: 'user', content: input });
+    const snapshotLength = contextManager.assemble().length;
+    contextManager.append({ role: 'user', content: input });
 
     const maxRounds = config.tools.max_loop_rounds;
     const maxConsecutiveFailures = config.tools.max_consecutive_failures;
@@ -49,100 +61,102 @@ export function createAgent(config: Config, options: AgentOptions = {}): AgentSe
     try {
       for (let round = 0; round < maxRounds; round++) {
         const result = await chatStream(
-        config,
-        history,
-        toolDefs,
-        (token) => options.onToken?.(token),
-        signal,
-      );
-      lastResult = result;
+          config,
+          contextManager.assemble(),
+          toolDefs,
+          (token) => options.onToken?.(token),
+          signal,
+        );
+        lastResult = result;
 
-      if (result.toolCalls.length === 0) {
-        history.push({ role: 'assistant', content: result.content });
-        return result.content;
-      }
-
-      // Record assistant message with tool calls
-      history.push({
-        role: 'assistant',
-        content: result.content || null,
-        tool_calls: result.toolCalls,
-      });
-
-      // Execute each tool call
-      for (const tc of result.toolCalls) {
-        const tool = registry.get(tc.function.name);
-        let toolResult;
-
-        if (!tool) {
-          toolResult = {
-            content: `Error: unknown tool "${tc.function.name}"`,
-            isError: true,
-          };
-        } else {
-          try {
-            const args = JSON.parse(tc.function.arguments || '{}');
-            options.onToolCall?.(tc.function.name, args);
-
-            // High-risk safety check for run_command — always enforced
-            if (
-              tc.function.name === 'run_command' &&
-              typeof args.command === 'string' &&
-              isHighRisk(args.command)
-            ) {
-              const cbs = getExecutorCallbacks();
-              if (!cbs.onConfirm) {
-                toolResult = { content: 'Error: high-risk command blocked — no confirmation handler registered.' };
-                history.push({
-                  role: 'tool',
-                  content: toolResult.content,
-                  tool_call_id: tc.id,
-                  name: tc.function.name,
-                });
-                continue;
-              }
-              const approved = await cbs.onConfirm(args.command, 'high_risk');
-              if (!approved) {
-                toolResult = { content: 'Command was rejected by user.' };
-                history.push({
-                  role: 'tool',
-                  content: toolResult.content,
-                  tool_call_id: tc.id,
-                  name: tc.function.name,
-                });
-                continue;
-              }
-            }
-
-            toolResult = await tool.handler(args);
-          } catch (e) {
-            toolResult = {
-              content: `Error executing tool: ${e instanceof Error ? e.message : String(e)}`,
-              isError: true,
-            };
-          }
+        if (result.toolCalls.length === 0) {
+          contextManager.append({ role: 'assistant', content: result.content });
+          return result.content;
         }
 
-        history.push({
-          role: 'tool',
-          content: toolResult.content,
-          tool_call_id: tc.id,
-          name: tc.function.name,
+        // Record assistant message with tool calls
+        contextManager.append({
+          role: 'assistant',
+          content: result.content || null,
+          tool_calls: result.toolCalls,
         });
 
-        // Track consecutive failures to detect when agent is stuck
-        if (toolResult.isError) {
-          consecutiveFailures++;
-          if (consecutiveFailures >= maxConsecutiveFailures) {
-            throw new Error(
-              `Stopped: ${consecutiveFailures} consecutive tool failures, ` +
-              `last tool: ${tc.function.name}`,
-            );
+        // Execute each tool call
+        for (const tc of result.toolCalls) {
+          const tool = registry.get(tc.function.name);
+          let toolResult;
+
+          if (!tool) {
+            toolResult = {
+              content: `Error: unknown tool "${tc.function.name}"`,
+              isError: true,
+            };
+          } else {
+            try {
+              const args = JSON.parse(tc.function.arguments || '{}');
+              options.onToolCall?.(tc.function.name, args);
+
+              // High-risk safety check for run_command — always enforced
+              if (
+                tc.function.name === 'run_command' &&
+                typeof args.command === 'string' &&
+                isHighRisk(args.command)
+              ) {
+                const cbs = getExecutorCallbacks();
+                if (!cbs.onConfirm) {
+                  toolResult = { content: 'Error: high-risk command blocked — no confirmation handler registered.' };
+                  contextManager.append({
+                    role: 'tool',
+                    content: toolResult.content,
+                    tool_call_id: tc.id,
+                    name: tc.function.name,
+                  });
+                  continue;
+                }
+                const approved = await cbs.onConfirm(args.command, 'high_risk');
+                if (!approved) {
+                  toolResult = { content: 'Command was rejected by user.' };
+                  contextManager.append({
+                    role: 'tool',
+                    content: toolResult.content,
+                    tool_call_id: tc.id,
+                    name: tc.function.name,
+                  });
+                  continue;
+                }
+              }
+
+              toolResult = await tool.handler(args);
+            } catch (e) {
+              toolResult = {
+                content: `Error executing tool: ${e instanceof Error ? e.message : String(e)}`,
+                isError: true,
+              };
+            }
           }
-        } else {
-          consecutiveFailures = 0;
+
+          contextManager.append({
+            role: 'tool',
+            content: toolResult.content,
+            tool_call_id: tc.id,
+            name: tc.function.name,
+          });
+
+          contextManager.scheduleSummarize(tc.id, tc.function.name, toolResult);
+
+          // Track consecutive failures to detect when agent is stuck
+          if (toolResult.isError) {
+            consecutiveFailures++;
+            if (consecutiveFailures >= maxConsecutiveFailures) {
+              throw new Error(
+                `Stopped: ${consecutiveFailures} consecutive tool failures, ` +
+                `last tool: ${tc.function.name}`,
+              );
+            }
+          } else {
+            consecutiveFailures = 0;
+          }
         }
-      }
       }
 
       const lastTool = lastResult?.toolCalls[lastResult.toolCalls.length - 1];
@@ -156,7 +170,7 @@ export function createAgent(config: Config, options: AgentOptions = {}): AgentSe
       const isLimitError = e instanceof Error &&
         (e.message.startsWith('Exceeded maximum') || e.message.startsWith('Stopped:'));
       if (!isLimitError) {
-        history.length = snapshotLength;
+        contextManager.truncateTo(snapshotLength);
       }
       throw e;
     }
@@ -165,7 +179,7 @@ export function createAgent(config: Config, options: AgentOptions = {}): AgentSe
   return {
     send,
     get history() {
-      return [...history];
+      return [...contextManager.assemble()];
     },
   };
 }

@@ -5,6 +5,8 @@ import type { Config } from '../../config/types';
 import type { StreamResult } from '../../llm/client';
 import { createRegistry } from '../../tools/registry';
 import type { ToolRegistry, ToolDefinition } from '../../tools/registry';
+import { createContextManager } from '../../context/manager';
+import type { ContextManager, Summarizer } from '../../context/types';
 
 vi.mock('../../llm/client', () => ({
   chatStream: vi.fn(),
@@ -312,5 +314,133 @@ describe('createAgent', () => {
     // History should be preserved for debugging
     expect(agent.history.length).toBeGreaterThan(0);
     expect(agent.history[0].role).toBe('user');
+  });
+});
+
+function createMockSummarizer(summaryText?: string): Summarizer {
+  return {
+    summarize: vi.fn().mockResolvedValue(summaryText ?? 'Mock summary (exit 0)'),
+    cancelAll: vi.fn(),
+  };
+}
+
+describe('ContextManager integration', () => {
+  let registry: ToolRegistry;
+  let cm: ContextManager;
+  let mockSummarizer: Summarizer;
+
+  beforeEach(() => {
+    mockedChatStream.mockClear();
+    registry = createRegistry();
+    mockSummarizer = createMockSummarizer();
+    cm = createContextManager(
+      { max_context_tokens: 100000, flow_rounds: 10, summarizer_model: '' },
+      mockSummarizer,
+    );
+  });
+
+  it('auto-summarizes tool output after flush', async () => {
+    registry.register({
+      name: 'verbose',
+      description: 'Returns lots of output',
+      parameters: { type: 'object', properties: {}, required: [] },
+      handler: async () => ({ content: 'X'.repeat(5000), isError: false }),
+    });
+
+    mockedChatStream
+      .mockResolvedValueOnce(makeToolCallResult('verbose', {}, 'call_1'))
+      .mockResolvedValueOnce(makeTextResult('Done'));
+
+    const agent = createAgent(TEST_CONFIG, { registry, contextManager: cm });
+    await agent.send('do it');
+    await cm.flushPendingSummaries();
+
+    const history = [...agent.history];
+    const toolMsg = history.find((m) => m.role === 'tool');
+    expect(toolMsg).toBeDefined();
+    expect(toolMsg!.content!.length).toBeLessThan(500);
+  });
+
+  it('agent continues before summary completes', async () => {
+    let resolveDelayed!: (value: string) => void;
+    const delayedSummary = new Promise<string>((resolve) => { resolveDelayed = resolve; });
+
+    const delayedSummarizer: Summarizer = {
+      summarize: vi.fn().mockReturnValue(delayedSummary),
+      cancelAll: vi.fn(),
+    };
+
+    const slowCm = createContextManager(
+      { max_context_tokens: 100000, flow_rounds: 10, summarizer_model: '' },
+      delayedSummarizer,
+    );
+
+    registry.register({
+      name: 'tool1',
+      description: 'First tool',
+      parameters: { type: 'object', properties: {}, required: [] },
+      handler: async () => ({ content: 'X'.repeat(1000), isError: false }),
+    });
+
+    registry.register({
+      name: 'tool2',
+      description: 'Second tool',
+      parameters: { type: 'object', properties: {}, required: [] },
+      handler: async () => ({ content: 'Y'.repeat(1000), isError: false }),
+    });
+
+    mockedChatStream
+      .mockResolvedValueOnce(makeToolCallResult('tool1', {}, 'call_1'))
+      .mockResolvedValueOnce(makeToolCallResult('tool2', {}, 'call_2'))
+      .mockResolvedValueOnce(makeTextResult('Finished'));
+
+    const agent = createAgent(TEST_CONFIG, { registry, contextManager: slowCm });
+    const reply = await agent.send('do both');
+
+    // Agent completed without waiting for slow summaries
+    expect(reply).toBe('Finished');
+
+    // Clean up
+    resolveDelayed('summary done');
+    await slowCm.flushPendingSummaries();
+  });
+
+  it('preserves history structure with context manager', async () => {
+    createEchoTool(registry);
+
+    mockedChatStream
+      .mockResolvedValueOnce(makeToolCallResult('echo', { message: 'hello' }, 'call_1'))
+      .mockResolvedValueOnce(makeTextResult('I echoed your message'));
+
+    const agent = createAgent(TEST_CONFIG, { registry, contextManager: cm });
+    await agent.send('echo hello');
+
+    const history = [...agent.history];
+    // Should have: user, assistant(tool_call), tool(result), assistant(text)
+    // Plus any state/knowledge layers
+    const nonSystem = history.filter(m => m.role !== 'system');
+    expect(nonSystem).toHaveLength(4);
+    expect(nonSystem[0].role).toBe('user');
+    expect(nonSystem[1].role).toBe('assistant');
+    expect(nonSystem[1].tool_calls).toBeDefined();
+    expect(nonSystem[2].role).toBe('tool');
+    expect(nonSystem[3].role).toBe('assistant');
+  });
+
+  it('error rollback works with context manager', async () => {
+    mockedChatStream.mockRejectedValueOnce(new Error('Network error'));
+
+    const agent = createAgent(TEST_CONFIG, { registry, contextManager: cm });
+    await expect(agent.send('boom')).rejects.toThrow('Network error');
+
+    // History should be rolled back (empty or just system messages)
+    const history = [...agent.history];
+    const nonSystem = history.filter(m => m.role !== 'system');
+    expect(nonSystem).toHaveLength(0);
+
+    // Should recover
+    mockedChatStream.mockResolvedValueOnce(makeTextResult('recovered'));
+    const reply = await agent.send('retry');
+    expect(reply).toBe('recovered');
   });
 });
