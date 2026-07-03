@@ -58,7 +58,7 @@ export function createContextManager(config: ContextConfig, model = 'gpt-4o'): C
             if (entry.message.role !== 'tool') continue;
             if (currentRound - entry.round < config.recent_rounds) continue;
 
-            const msgAny = entry.message as Record<string, unknown>;
+            const msgAny = entry.message as unknown as Record<string, unknown>;
             const summary = msgAny.summary as string | undefined;
             const keyOutput = msgAny.keyOutput as string | undefined;
             if (summary) {
@@ -78,7 +78,7 @@ export function createContextManager(config: ContextConfig, model = 'gpt-4o'): C
         for (let i = 0; i < flow.length; i++) {
             if (flow[i].pinned || flow[i].message.role !== 'tool') continue;
 
-            const summary = (flow[i].message as Record<string, unknown>).summary as string | undefined;
+            const summary = (flow[i].message as unknown as Record<string, unknown>).summary as string | undefined;
             if (!summary) {
                 lastToolSummary = undefined;
                 lastToolIdx = -1;

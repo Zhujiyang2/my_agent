@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { estimateTokens } from '../token-counter';
-import type { Message } from '../../llm/types';
 
 describe('estimateTokens (tiktoken)', () => {
     it('returns 0 for empty array', () => {

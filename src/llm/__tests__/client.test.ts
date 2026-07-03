@@ -16,8 +16,7 @@ const TEST_CONFIG: Config = {
   },
   context: {
     max_context_tokens: 100000,
-    flow_rounds: 10,
-    summarizer_model: '',
+    recent_rounds: 3,
   },
 };
 

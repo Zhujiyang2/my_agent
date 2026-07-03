@@ -57,7 +57,7 @@ function createEchoTool(registry: ToolRegistry): ToolDefinition {
       properties: { message: { type: 'string', description: 'Message to echo' } },
       required: ['message'],
     },
-    handler: async (params: Record<string, unknown>) => ({ content: `echo: ${params.message}` }),
+    handler: async (params: Record<string, unknown>) => ({ content: `echo: ${params.message}`, summary: `exit=0 | echo ${params.message}`, exitCode: 0 }),
   };
   registry.register(tool);
   return tool;
@@ -258,7 +258,7 @@ describe('createAgent', () => {
       name: 'flaky',
       description: 'Always fails',
       parameters: { type: 'object', properties: {}, required: [] },
-      handler: async () => ({ content: 'fail', isError: true }),
+      handler: async () => ({ content: 'fail', isError: true, summary: 'exit=1 | tool failed', exitCode: 1 }),
     });
 
     // LLM keeps retrying the flaky tool
@@ -274,7 +274,7 @@ describe('createAgent', () => {
       name: 'flaky',
       description: 'Sometimes fails',
       parameters: { type: 'object', properties: {}, required: [] },
-      handler: async () => ({ content: 'fail', isError: true }),
+      handler: async () => ({ content: 'fail', isError: true, summary: 'exit=1 | tool failed', exitCode: 1 }),
     });
     createEchoTool(registry);
 
@@ -302,7 +302,7 @@ describe('createAgent', () => {
       name: 'flaky',
       description: 'Always fails',
       parameters: { type: 'object', properties: {}, required: [] },
-      handler: async () => ({ content: 'fail', isError: true }),
+      handler: async () => ({ content: 'fail', isError: true, summary: 'exit=1 | tool failed', exitCode: 1 }),
     });
 
     mockedChatStream.mockResolvedValue(makeToolCallResult('flaky', {}));
