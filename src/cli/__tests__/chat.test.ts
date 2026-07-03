@@ -4,6 +4,7 @@ import {
   formatWelcome,
   formatUserMessage,
   formatAssistantMessage,
+  promptConfirm,
   WELCOME_ART,
 } from '../chat';
 
@@ -58,5 +59,15 @@ describe('formatAssistantMessage', () => {
   it('formats assistant message', () => {
     const result = formatAssistantMessage('hi there');
     expect(result).toContain('hi there');
+  });
+});
+
+describe('promptConfirm', () => {
+  it('formats the confirmation prompt correctly', () => {
+    const result = promptConfirm('rm -rf /data', 'file_destruction');
+    expect(result).toContain('rm -rf /data');
+    expect(result).toContain('high risk');
+    expect(result).toContain('[y]');
+    expect(result).toContain('[n]');
   });
 });
