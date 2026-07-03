@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { ToolDefinition } from '../types';
+import { normalizePath } from '../path-utils';
 
 export const writeFileTool: ToolDefinition = {
   name: 'write_file',
@@ -15,7 +16,7 @@ export const writeFileTool: ToolDefinition = {
     required: ['path', 'content'],
   },
   handler: async (params: Record<string, unknown>) => {
-    const filePath = String(params.path ?? '');
+    const filePath = normalizePath(String(params.path ?? ''));
     const content = String(params.content ?? '');
 
     try {

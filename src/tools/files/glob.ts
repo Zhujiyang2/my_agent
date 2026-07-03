@@ -2,6 +2,7 @@
 import { execFileSync } from 'node:child_process';
 import { statSync } from 'node:fs';
 import type { ToolDefinition } from '../types';
+import { normalizePath } from '../path-utils';
 
 function runGlob(pattern: string, workdir: string): string {
   const s = statSync(workdir);
@@ -34,7 +35,7 @@ export const globTool: ToolDefinition = {
   },
   handler: async (params: Record<string, unknown>) => {
     const pattern = String(params.pattern ?? '*');
-    const workdir = String(params.workdir ?? process.cwd());
+    const workdir = normalizePath(String(params.workdir ?? process.cwd()));
 
     try {
       const result = runGlob(pattern, workdir);

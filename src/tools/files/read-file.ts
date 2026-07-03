@@ -1,6 +1,7 @@
 // src/tools/files/read-file.ts
 import fs from 'node:fs';
 import type { ToolDefinition } from '../types';
+import { normalizePath } from '../path-utils';
 
 export const readFileTool: ToolDefinition = {
   name: 'read_file',
@@ -15,7 +16,7 @@ export const readFileTool: ToolDefinition = {
     required: ['path'],
   },
   handler: async (params: Record<string, unknown>) => {
-    const filePath = String(params.path ?? '');
+    const filePath = normalizePath(String(params.path ?? ''));
     const offset = typeof params.offset === 'number' ? params.offset : 0;
     const limit = typeof params.limit === 'number' ? params.limit : undefined;
 
