@@ -86,33 +86,23 @@ export function createContextManager(config: ContextConfig, model = 'gpt-4o'): C
             }
 
             if (lastToolSummary !== undefined && summary === lastToolSummary) {
-                // Found duplicate — keep the later one (at index i), remove the earlier
-                const startRound = flow[lastToolIdx].round;
-                const endRound = flow[i].round;
+                // Found duplicate — summarise the earlier one in-place instead of
+                // removing it, so that any assistant message referencing its
+                // tool_call_id still has a matching tool response. The OpenAI API
+                // requires every assistant tool_calls to be followed by tool
+                // messages for each tool_call_id.
 
-                // Insert merge note before the later tool
-                flow.splice(i, 0, {
-                    message: {
-                        role: 'system',
-                        content: `[R${startRound}-R${endRound}: 2 identical results merged]`,
-                    },
-                    round: endRound,
-                    pinned: false,
-                });
-                // After insert, the later tool is now at i + 1
+                // Keep the earlier entry but replace content with merge note.
+                // Preserves tool_call_id, name, and other required fields.
+                const earlierEntry = flow[lastToolIdx];
+                const earlierMsg = earlierEntry.message as unknown as Record<string, unknown>;
+                earlierMsg.content = `[merged] ${earlierMsg.content}`;
+                // Ensure the earlier entry is no longer treated as a distinct match
+                (earlierEntry.message as unknown as Record<string, unknown>).summary = undefined;
 
-                // Remove the earlier duplicate at lastToolIdx
-                flow.splice(lastToolIdx, 1);
-                // After removal, the note shifts to lastToolIdx, and the later tool
-                // shifts to lastToolIdx + 1.
-                // The current position in the loop (i) needs adjustment:
-                // We inserted at i, so the kept tool was at i + 1.
-                // Then we removed at lastToolIdx (< i), so everything between
-                // lastToolIdx and i shifted left by 1.
-                // The kept tool is now at position i (since i moved left by 1).
-                // Update tracking to point at the kept tool.
+                // Update tracking to point at the current (kept) tool
                 lastToolSummary = summary;
-                lastToolIdx = i; // the kept tool is now at index i
+                lastToolIdx = i;
             } else {
                 lastToolSummary = summary;
                 lastToolIdx = i;
