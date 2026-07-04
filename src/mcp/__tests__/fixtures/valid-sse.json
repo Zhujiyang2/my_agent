@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "remote-db": {
+      "transport": "sse",
+      "url": "https://example.com/mcp",
+      "headers": { "Authorization": "Bearer xxx" },
+      "idleTimeoutMs": 600000
+    }
+  }
+}
