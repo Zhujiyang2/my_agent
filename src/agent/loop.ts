@@ -8,6 +8,11 @@ import { defaultRegistry } from '../tools/registry';
 import { createContextManager } from '../context/manager';
 import type { ContextManager } from '../context/types';
 import { createManageContextTool } from '../tools/context/manage-context';
+import { createMemoryManager } from '../memory/index';
+import { createRememberTool } from '../tools/memory/remember';
+import { createForgetTool } from '../tools/memory/forget';
+import path from 'node:path';
+import os from 'node:os';
 
 export interface AgentOptions {
     onToken?: (token: string) => void;
@@ -37,14 +42,32 @@ function toolsToOpenAI(
 export function createAgent(config: Config, options: AgentOptions = {}): AgentSession {
     const registry = options.registry ?? defaultRegistry;
 
+    // Create MemoryManager if enabled
+    const memoryManager = config.memory?.enabled
+        ? createMemoryManager({
+            enabled: true,
+            user_budget: config.memory.user_budget,
+            agent_budget: config.memory.agent_budget,
+            compress_threshold: config.memory.compress_threshold,
+            memoryDir: path.join(os.homedir(), '.my_agent', 'memory'),
+          })
+        : undefined;
+
     const contextManager: ContextManager = options.contextManager ?? createContextManager(
         config.context,
         config.model,
+        memoryManager,
     );
 
     // Register manage_context tool if not already present (e.g., shared defaultRegistry)
     if (!registry.get('manage_context')) {
         registry.register(createManageContextTool(contextManager));
+    }
+
+    // Register memory tools if MemoryManager is enabled
+    if (memoryManager && !registry.get('remember')) {
+        registry.register(createRememberTool(memoryManager));
+        registry.register(createForgetTool(memoryManager));
     }
 
     async function send(input: string, signal?: AbortSignal): Promise<string> {

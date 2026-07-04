@@ -46,9 +46,9 @@ describe('loadConfig', () => {
       },
       memory: {
         enabled: false,
-        user_budget: 100,
-        agent_budget: 100,
-        compress_threshold: 0.8,
+        user_budget: 4000,
+        agent_budget: 2000,
+        compress_threshold: 5,
       },
     });
   });
