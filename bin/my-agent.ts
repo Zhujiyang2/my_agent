@@ -3,6 +3,9 @@
 // My Agent CLI - terminal AI assistant
 // Usage: npm start  or  node --import tsx bin/my-agent.ts
 
+// Bootstrap proxy support (via global-agent) — set GLOBAL_AGENT_HTTP_PROXY env var to activate
+import 'global-agent/bootstrap';
+
 import readline from 'node:readline';
 import { loadConfig } from '../src/config/loader';
 import { createAgent } from '../src/agent/loop';

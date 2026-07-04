@@ -4,6 +4,12 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import type { McpServerConfig } from './config';
 
+// SSE transport requires EventSource — polyfill for Node.js
+import EventSource from 'eventsource';
+if (typeof globalThis.EventSource === 'undefined') {
+  (globalThis as Record<string, unknown>).EventSource = EventSource;
+}
+
 export interface ToolSchema {
   name: string;
   description: string;
