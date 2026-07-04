@@ -7,6 +7,7 @@ export interface ToolRegistry {
   register(tool: ToolDefinition): void;
   get(name: string): ToolDefinition | undefined;
   getAll(): ToolDefinition[];
+  remove(name: string): void;
 }
 
 export function createRegistry(): ToolRegistry {
@@ -26,6 +27,10 @@ export function createRegistry(): ToolRegistry {
 
     getAll(): ToolDefinition[] {
       return Array.from(tools.values());
+    },
+
+    remove(name: string): void {
+      tools.delete(name);
     },
   };
 }
