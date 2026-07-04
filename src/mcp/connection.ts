@@ -139,6 +139,7 @@ export class MCPConnection {
     }
 
     const result = await this.client.readResource({ uri });
+    this.resetIdleTimer();
     return result.contents
       .filter((c): c is { text: string } => 'text' in c)
       .map(c => c.text)
@@ -157,11 +158,11 @@ export class MCPConnection {
     const { config } = this;
     if (config.transport === 'stdio') {
       return new StdioClientTransport({
-        command: config.command!,
+        command: config.command,
         args: config.args,
       });
     } else {
-      return new SSEClientTransport(new URL(config.url!));
+      return new SSEClientTransport(new URL(config.url));
     }
   }
 

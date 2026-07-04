@@ -3,15 +3,22 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-export interface McpServerConfig {
-  transport: 'stdio' | 'sse';
-  command?: string;
+export interface StdioMcpServerConfig {
+  transport: 'stdio';
+  command: string;
   args?: string[];
   env?: Record<string, string>;
-  url?: string;
-  headers?: Record<string, string>;
-  idleTimeoutMs: number; // default 300000
+  idleTimeoutMs: number;
 }
+
+export interface SSEMcpServerConfig {
+  transport: 'sse';
+  url: string;
+  headers?: Record<string, string>;
+  idleTimeoutMs: number;
+}
+
+export type McpServerConfig = StdioMcpServerConfig | SSEMcpServerConfig;
 
 export interface McpConfig {
   mcpServers: Record<string, McpServerConfig>;
@@ -43,39 +50,49 @@ function validateMcpServerConfig(
     }
   }
 
-  const config: McpServerConfig = {
-    transport,
-    idleTimeoutMs:
-      typeof raw.idleTimeoutMs === 'number' && raw.idleTimeoutMs > 0
-        ? raw.idleTimeoutMs
-        : DEFAULT_IDLE_TIMEOUT_MS,
-  };
+  const idleTimeoutMs =
+    typeof raw.idleTimeoutMs === 'number' && raw.idleTimeoutMs > 0
+      ? raw.idleTimeoutMs
+      : DEFAULT_IDLE_TIMEOUT_MS;
 
-  if (typeof raw.command === 'string') {
-    config.command = raw.command;
-  }
-  if (Array.isArray(raw.args)) {
-    const filtered = raw.args.filter((a): a is string => typeof a === 'string');
-    if (filtered.length !== raw.args.length) {
+  if (transport === 'stdio') {
+    const args = Array.isArray(raw.args)
+      ? raw.args.filter((a): a is string => typeof a === 'string')
+      : undefined;
+    if (args && Array.isArray(raw.args) && args.length !== raw.args.length) {
       console.warn(`[mcp] Server "${name}": non-string values in "args" were dropped`);
     }
-    config.args = filtered;
+
+    let env: Record<string, string> | undefined;
+    if (isValidStringRecord(raw.env)) {
+      env = raw.env;
+    } else if (raw.env !== undefined) {
+      console.warn(`[mcp] Server "${name}": "env" must be an object with string values, ignoring`);
+    }
+
+    return {
+      transport: 'stdio',
+      command: raw.command as string,
+      args,
+      env,
+      idleTimeoutMs,
+    } satisfies McpServerConfig;
   }
-  if (isValidStringRecord(raw.env)) {
-    config.env = raw.env;
-  } else if (raw.env !== undefined) {
-    console.warn(`[mcp] Server "${name}": "env" must be an object with string values, ignoring`);
-  }
-  if (typeof raw.url === 'string') {
-    config.url = raw.url;
-  }
+
+  // transport === 'sse'
+  let headers: Record<string, string> | undefined;
   if (isValidStringRecord(raw.headers)) {
-    config.headers = raw.headers;
+    headers = raw.headers;
   } else if (raw.headers !== undefined) {
     console.warn(`[mcp] Server "${name}": "headers" must be an object with string values, ignoring`);
   }
 
-  return config;
+  return {
+    transport: 'sse',
+    url: raw.url as string,
+    headers,
+    idleTimeoutMs,
+  } satisfies McpServerConfig;
 }
 
 function isValidStringRecord(value: unknown): value is Record<string, string> {
