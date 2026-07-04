@@ -1,6 +1,6 @@
 // src/memory/__tests__/sanitizer.test.ts
 import { describe, it, expect } from 'vitest';
-import { sanitize, type SanitizeResult } from '../sanitizer';
+import { sanitize } from '../sanitizer';
 
 describe('sanitize', () => {
   it('redacts password in key=value context', () => {
