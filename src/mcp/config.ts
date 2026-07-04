@@ -1,5 +1,7 @@
 // src/mcp/config.ts
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 export interface McpServerConfig {
   transport: 'stdio' | 'sse';
@@ -53,16 +55,24 @@ function validateMcpServerConfig(
     config.command = raw.command;
   }
   if (Array.isArray(raw.args)) {
-    config.args = raw.args.filter((a): a is string => typeof a === 'string');
+    const filtered = raw.args.filter((a): a is string => typeof a === 'string');
+    if (filtered.length !== raw.args.length) {
+      console.warn(`[mcp] Server "${name}": non-string values in "args" were dropped`);
+    }
+    config.args = filtered;
   }
   if (isValidStringRecord(raw.env)) {
     config.env = raw.env;
+  } else if (raw.env !== undefined) {
+    console.warn(`[mcp] Server "${name}": "env" must be an object with string values, ignoring`);
   }
   if (typeof raw.url === 'string') {
     config.url = raw.url;
   }
   if (isValidStringRecord(raw.headers)) {
     config.headers = raw.headers;
+  } else if (raw.headers !== undefined) {
+    console.warn(`[mcp] Server "${name}": "headers" must be an object with string values, ignoring`);
   }
 
   return config;
@@ -74,7 +84,7 @@ function isValidStringRecord(value: unknown): value is Record<string, string> {
 }
 
 export function loadMcpConfig(filePath?: string): McpConfig | null {
-  const resolvedPath = filePath ?? `${process.env.HOME ?? process.env.USERPROFILE}/.my_agent/mcp.json`;
+  const resolvedPath = filePath ?? path.join(os.homedir(), '.my_agent', 'mcp.json');
 
   if (!fs.existsSync(resolvedPath)) {
     return null;
