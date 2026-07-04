@@ -19,6 +19,7 @@
     "vitest": "^4.1.9"
   },
   "dependencies": {
+    "global-agent": "^3.0.0",
     "tiktoken": "^1.0.22"
   }
 }

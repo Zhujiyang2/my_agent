@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "tavily": {
+      "transport": "streamable-http",
+      "url": "https://mcp.tavily.com/mcp/",
+      "headers": { "Authorization": "Bearer key123" }
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "tavily": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@anthropic/tavily-mcp"]
+    },
+    "bad-one": {
+      "transport": "stdio"
+    }
+  }
+}
