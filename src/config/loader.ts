@@ -42,6 +42,7 @@ export function loadConfig(filePath?: string): Config {
   const toolsCfg = (cfg.tools as Record<string, unknown> | undefined) ?? {};
   const contextCfg = (cfg.context as Record<string, unknown> | undefined) ?? {};
   const subagentCfg = (cfg.subagent as Record<string, unknown> | undefined) ?? {};
+  const memoryCfg = (cfg.memory as Record<string, unknown> | undefined) ?? {};
 
   return {
     api_url: validateStringField('api_url'),
@@ -70,6 +71,12 @@ export function loadConfig(filePath?: string): Config {
         typeof subagentCfg.default_timeout_ms === 'number' ? subagentCfg.default_timeout_ms : 600_000,
       max_inbox_size:
         typeof subagentCfg.max_inbox_size === 'number' ? subagentCfg.max_inbox_size : 50,
+    },
+    memory: {
+      enabled: typeof memoryCfg.enabled === 'boolean' ? memoryCfg.enabled : false,
+      user_budget: typeof memoryCfg.user_budget === 'number' ? memoryCfg.user_budget : 100,
+      agent_budget: typeof memoryCfg.agent_budget === 'number' ? memoryCfg.agent_budget : 100,
+      compress_threshold: typeof memoryCfg.compress_threshold === 'number' ? memoryCfg.compress_threshold : 0.8,
     },
   };
 }

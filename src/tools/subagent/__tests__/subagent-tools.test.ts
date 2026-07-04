@@ -15,6 +15,7 @@ const BASE_CONFIG: Config = {
   tools: { max_loop_rounds: 100, max_consecutive_failures: 5, command_timeout: 60, background_timeout: 0 },
   context: { max_context_tokens: 100000, recent_rounds: 3 },
   subagent: { max_concurrent: 8, default_timeout_ms: 600000, max_inbox_size: 50 },
+  memory: { enabled: false, user_budget: 100, agent_budget: 100, compress_threshold: 0.8 },
 };
 
 function makeFakeResult(overrides: Partial<SubagentResult> = {}): SubagentResult {
