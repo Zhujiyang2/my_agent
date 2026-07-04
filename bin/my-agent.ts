@@ -87,10 +87,6 @@ async function main(): Promise<void> {
   const mcpManager = new MCPManager();
   mcpManager.initialize(mcpConfig);
   setMCPManager(mcpManager);
-  if (mcpConfig) {
-    const count = Object.keys(mcpConfig.mcpServers).length;
-    console.log(formatInfo(`  MCP: ${count} server(s) configured`));
-  }
 
   // Set up safety confirmation — must be after rl creation
   setExecutorCallbacks({
