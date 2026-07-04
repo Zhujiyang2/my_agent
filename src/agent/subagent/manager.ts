@@ -11,6 +11,7 @@ import { runCommandTool } from '../../tools/shell/run-command';
 import { globTool } from '../../tools/files/glob';
 import { readFileTool } from '../../tools/files/read-file';
 import { writeFileTool } from '../../tools/files/write-file';
+import { createManageContextTool } from '../../tools/context/manage-context';
 import type {
   SubagentResult,
   SubagentStatusEntry,
@@ -259,6 +260,11 @@ export class SubagentManager {
     const registry = buildSubagentRegistry(toolNames, handle.id, node);
     const baseCm = createContextManager(this.config.context, subConfig.model);
     const contextManager = createMessageInjector(baseCm, () => handle.inbox);
+
+    // manage_context operates on the subagent's own context
+    if (!registry.get('manage_context')) {
+      registry.register(createManageContextTool(contextManager));
+    }
 
     this.tokensUsed.set(handle.id, 0);
     this.roundCounts.set(handle.id, 0);
