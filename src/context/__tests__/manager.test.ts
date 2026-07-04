@@ -1,8 +1,12 @@
 // src/context/__tests__/manager.test.ts
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createContextManager } from '../manager';
 import type { ContextManager, ContextConfig } from '../types';
 import type { Message } from '../../llm/types';
+import { createMemoryManager, type MemoryManager } from '../../memory/index';
+import path from 'node:path';
+import os from 'node:os';
+import fs from 'node:fs';
 
 const CONTEXT_CONFIG: ContextConfig = {
     max_context_tokens: 100000,
@@ -328,4 +332,73 @@ describe('createContextManager', () => {
         cm.truncateTo(5);
         expect(cm.assemble()).toHaveLength(1);
     });
+});
+
+describe('createContextManager with MemoryManager', () => {
+  let cm: ContextManager;
+  let mm: MemoryManager;
+  const testDir = path.join(os.tmpdir(), `ctx-memory-test-${Date.now()}`);
+
+  beforeEach(async () => {
+    fs.mkdirSync(testDir, { recursive: true });
+    mm = createMemoryManager({
+      enabled: true,
+      user_budget: 4000,
+      agent_budget: 2000,
+      compress_threshold: 5,
+      memoryDir: testDir,
+    });
+    cm = createContextManager(CONTEXT_CONFIG, 'gpt-4o', mm);
+  });
+
+  afterEach(() => {
+    fs.rmSync(testDir, { recursive: true, force: true });
+  });
+
+  it('injects memory as first system message when memories exist', async () => {
+    await mm.remember({
+      name: 'test-memory',
+      description: 'A test memory',
+      content: 'Test memory content.',
+      type: 'user',
+    });
+
+    cm.append(userMsg('hello'));
+    const messages = cm.assemble();
+
+    expect(messages[0].role).toBe('system');
+    expect(messages[0].content).toContain('## User Memories');
+    expect(messages[0].content).toContain('test-memory');
+  });
+
+  it('does not inject memory when no memories exist', async () => {
+    cm.append(userMsg('hello'));
+    const messages = cm.assemble();
+
+    expect(messages[0].role).toBe('user');
+  });
+
+  it('injects memory before state layer', async () => {
+    await mm.remember({
+      name: 'test-memory',
+      description: 'Test',
+      content: 'Memory content.',
+      type: 'user',
+    });
+
+    cm.setState('key', 'value');
+    cm.append(userMsg('hello'));
+    const messages = cm.assemble();
+
+    // First: memory system message
+    expect(messages[0].role).toBe('system');
+    expect(messages[0].content).toContain('User Memories');
+
+    // Second: state system message
+    expect(messages[1].role).toBe('system');
+    expect(messages[1].content).toContain('"key":"value"');
+
+    // Third: user message
+    expect(messages[2].role).toBe('user');
+  });
 });

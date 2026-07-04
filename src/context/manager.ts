@@ -1,6 +1,7 @@
 // src/context/manager.ts
 import type { ContextManager, ContextConfig } from './types';
 import type { Message } from '../llm/types';
+import type { MemoryManager } from '../memory/index';
 import { estimateTokens } from './token-counter';
 
 interface FlowEntry {
@@ -16,7 +17,7 @@ export class BudgetError extends Error {
     }
 }
 
-export function createContextManager(config: ContextConfig, model = 'gpt-4o'): ContextManager {
+export function createContextManager(config: ContextConfig, model = 'gpt-4o', memoryManager?: MemoryManager): ContextManager {
     const flow: FlowEntry[] = [];
     const state: Record<string, unknown> = {};
     let currentRound = 0;
@@ -35,6 +36,12 @@ export function createContextManager(config: ContextConfig, model = 'gpt-4o'): C
 
     function assemble(): Message[] {
         const result: Message[] = [];
+
+        // Layer 0: Memory
+        const memSystemMsg = memoryManager?.assemble();
+        if (memSystemMsg) {
+            result.push({ role: 'system', content: memSystemMsg });
+        }
 
         // Layer 1: State
         if (Object.keys(state).length > 0) {
