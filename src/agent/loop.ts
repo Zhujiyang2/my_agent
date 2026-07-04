@@ -7,6 +7,7 @@ import type { ToolRegistry } from '../tools/registry';
 import { defaultRegistry } from '../tools/registry';
 import { createContextManager } from '../context/manager';
 import type { ContextManager } from '../context/types';
+import { createManageContextTool } from '../tools/context/manage-context';
 
 export interface AgentOptions {
     onToken?: (token: string) => void;
@@ -40,6 +41,11 @@ export function createAgent(config: Config, options: AgentOptions = {}): AgentSe
         config.context,
         config.model,
     );
+
+    // Register manage_context tool if not already present (e.g., shared defaultRegistry)
+    if (!registry.get('manage_context')) {
+        registry.register(createManageContextTool(contextManager));
+    }
 
     async function send(input: string, signal?: AbortSignal): Promise<string> {
         const snapshotLength = contextManager.assemble().length;
@@ -159,8 +165,11 @@ export function createAgent(config: Config, options: AgentOptions = {}): AgentSe
                     contextManager.append(toolMsg as Message);
 
                     // Auto-pin error results
+                    // Note: assemble() prepends a state message when state is non-empty,
+                    // so we need to account for that to get the correct flow index.
                     if (toolResult.isError) {
-                        const flowIdx = contextManager.assemble().length - 1;
+                        const hasState = Object.keys(contextManager.getState()).length > 0;
+                        const flowIdx = contextManager.assemble().length - 1 - (hasState ? 1 : 0);
                         contextManager.pin(flowIdx);
                     }
 

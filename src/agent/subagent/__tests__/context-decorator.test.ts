@@ -114,4 +114,16 @@ describe('createMessageInjector', () => {
     expect(systemMsgs[0].content).toContain('second'); // unshift order: second first
     expect(systemMsgs[1].content).toContain('first');
   });
+
+  it('delegates findByToolCallId to base ContextManager', () => {
+    base.append({ role: 'user', content: 'q' });
+    base.append({ role: 'tool', content: 'output', tool_call_id: 'call_1', name: 'run_command' } as any);
+    base.append({ role: 'tool', content: 'output2', tool_call_id: 'call_2', name: 'glob' } as any);
+
+    const decorated = createMessageInjector(base, () => inbox);
+
+    expect(decorated.findByToolCallId('call_1')).toBe(1);
+    expect(decorated.findByToolCallId('call_2')).toBe(2);
+    expect(decorated.findByToolCallId('nonexistent')).toBeUndefined();
+  });
 });

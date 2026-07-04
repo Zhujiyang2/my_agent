@@ -156,6 +156,48 @@ describe('createContextManager', () => {
         expect(toolMessages[0].content).toContain('summary-0');
     });
 
+    // === findByToolCallId ===
+
+    it('finds tool message by tool_call_id', () => {
+        cm.append(userMsg('q'));
+        cm.append(toolMsg('output', 'call_abc', 'run_command'));
+        cm.append(userMsg('q2'));
+        cm.append(toolMsg('output2', 'call_xyz', 'glob'));
+
+        expect(cm.findByToolCallId('call_abc')).toBe(1);
+        expect(cm.findByToolCallId('call_xyz')).toBe(3);
+    });
+
+    it('returns undefined when tool_call_id not found', () => {
+        cm.append(userMsg('q'));
+        cm.append(toolMsg('output', 'call_1', 'run_command'));
+
+        expect(cm.findByToolCallId('nonexistent')).toBeUndefined();
+    });
+
+    it('returns the most recent match when tool_call_id appears multiple times', () => {
+        cm.append(userMsg('q1'));
+        cm.append(toolMsg('first', 'call_same', 'run_command'));
+        cm.append(userMsg('q2'));
+        cm.append(toolMsg('second', 'call_same', 'run_command'));
+
+        expect(cm.findByToolCallId('call_same')).toBe(3);
+    });
+
+    it('returns undefined when flow is empty', () => {
+        expect(cm.findByToolCallId('anything')).toBeUndefined();
+    });
+
+    it('only matches tool messages, not other roles', () => {
+        // A non-tool message with the same tool_call_id should NOT match
+        cm.append({ role: 'user', content: 'hello', tool_call_id: 'call_same' } as any);
+        cm.append(toolMsg('real tool', 'call_same', 'run_command'));
+
+        const idx = cm.findByToolCallId('call_same');
+        expect(idx).toBe(1); // should find the tool message at index 1, not the user message at index 0
+        expect(cm.assemble()[idx!].role).toBe('tool');
+    });
+
     // === Compact: dedup ===
 
     it('deduplicates adjacent tool messages with same summary', () => {

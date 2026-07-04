@@ -18,6 +18,7 @@ export function createMessageInjector(
     compact: base.compact.bind(base),
     pin: base.pin.bind(base),
     unpin: base.unpin.bind(base),
+    findByToolCallId: base.findByToolCallId.bind(base),
     setState: base.setState.bind(base),
     getState: base.getState.bind(base),
     truncateTo: base.truncateTo.bind(base),
