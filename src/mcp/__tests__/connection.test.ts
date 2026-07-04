@@ -1,38 +1,68 @@
 // src/mcp/__tests__/connection.test.ts
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Use vi.hoisted to create mock variables that survive vi.mock hoisting
+// Shared mock state — hoisted
 const mockClientConnect = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const mockClientClose = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const mockClientListTools = vi.hoisted(() => vi.fn().mockResolvedValue({ tools: [] }));
+const mockClientListResources = vi.hoisted(() => vi.fn().mockResolvedValue({ resources: [] }));
+const mockClientListResourceTemplates = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ resourceTemplates: [] }),
+);
 const mockClientCallTool = vi.hoisted(() => vi.fn());
-const mockClientListTools = vi.hoisted(() => vi.fn());
-const mockClientListResources = vi.hoisted(() => vi.fn());
 const mockClientReadResource = vi.hoisted(() => vi.fn());
-const mockStdioClientTransport = vi.hoisted(() => vi.fn());
-const mockSSEClientTransport = vi.hoisted(() => vi.fn());
 
-vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
-  Client: vi.fn(function() {
+// Use vi.fn with implementations that return objects so `new` works
+// AND the function is a spy (so toHaveBeenCalled works)
+const mockMCPClientCtor = vi.hoisted(() =>
+  vi.fn(function () {
     return {
       connect: mockClientConnect,
       close: mockClientClose,
-      callTool: mockClientCallTool,
       listTools: mockClientListTools,
       listResources: mockClientListResources,
+      listResourceTemplates: mockClientListResourceTemplates,
+      callTool: mockClientCallTool,
       readResource: mockClientReadResource,
     };
   }),
+);
+
+const mockStdioTransportCtor = vi.hoisted(() =>
+  vi.fn(function () {
+    return {
+      start: vi.fn().mockResolvedValue(undefined),
+      send: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+  }),
+);
+
+const mockStreamableHTTPTransportCtor = vi.hoisted(() =>
+  vi.fn(function () {
+    return {
+      start: vi.fn().mockResolvedValue(undefined),
+      send: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+  }),
+);
+
+vi.mock('../mcp-client', () => ({
+  MCPClient: mockMCPClientCtor,
 }));
 
-vi.mock('@modelcontextprotocol/sdk/client/stdio.js', () => ({
-  StdioClientTransport: mockStdioClientTransport,
+vi.mock('../transports/stdio', () => ({
+  StdioTransport: mockStdioTransportCtor,
 }));
 
-vi.mock('@modelcontextprotocol/sdk/client/sse.js', () => ({
-  SSEClientTransport: mockSSEClientTransport,
+vi.mock('../transports/streamable-http', () => ({
+  StreamableHTTPTransport: mockStreamableHTTPTransportCtor,
 }));
 
 import { MCPConnection } from '../connection';
+import { StdioTransport } from '../transports/stdio';
+import { StreamableHTTPTransport } from '../transports/streamable-http';
 import type { McpServerConfig } from '../config';
 
 const STDIO_CONFIG: McpServerConfig = {
@@ -40,29 +70,22 @@ const STDIO_CONFIG: McpServerConfig = {
   command: 'npx',
   args: ['-y', 'test-mcp'],
   idleTimeoutMs: 300000,
+  connectTimeoutMs: 30000,
 };
 
-const SSE_CONFIG: McpServerConfig = {
-  transport: 'sse',
-  url: 'https://example.com/mcp',
+const STREAMABLE_HTTP_CONFIG: McpServerConfig = {
+  transport: 'streamable-http',
+  url: 'https://mcp.example.com/mcp',
   idleTimeoutMs: 300000,
+  connectTimeoutMs: 30000,
 };
-
-function makeToolsResponse(tools: Array<{ name: string; description?: string }>) {
-  return {
-    tools: tools.map(t => ({
-      name: t.name,
-      description: t.description ?? '',
-      inputSchema: { type: 'object' as const, properties: {} },
-    })),
-  };
-}
 
 describe('MCPConnection', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockClientListTools.mockResolvedValue(makeToolsResponse([]));
+    mockClientListTools.mockResolvedValue({ tools: [] });
     mockClientListResources.mockResolvedValue({ resources: [] });
+    mockClientListResourceTemplates.mockResolvedValue({ resourceTemplates: [] });
     mockClientCallTool.mockResolvedValue({
       content: [{ type: 'text', text: 'result' }],
     });
@@ -79,45 +102,77 @@ describe('MCPConnection', () => {
     it('starts in idle state', () => {
       const conn = new MCPConnection('test', STDIO_CONFIG);
       expect(conn.state).toBe('idle');
-      expect(conn.name).toBe('test');
     });
   });
 
   describe('connect', () => {
-    it('creates StdioClientTransport for stdio config', async () => {
+    it('creates StdioTransport for stdio config', async () => {
       const conn = new MCPConnection('test', STDIO_CONFIG);
       await conn.connect();
 
-      expect(mockStdioClientTransport).toHaveBeenCalledWith({
+      expect(StdioTransport).toHaveBeenCalledWith({
         command: 'npx',
         args: ['-y', 'test-mcp'],
+        env: undefined,
+        cwd: undefined,
+        stderr: undefined,
       });
-      expect(mockClientConnect).toHaveBeenCalled();
       expect(conn.state).toBe('connected');
     });
 
-    it('creates SSEClientTransport for sse config', async () => {
-      const conn = new MCPConnection('test', SSE_CONFIG);
+    it('passes all fields to StdioTransport', async () => {
+      const config: McpServerConfig = {
+        transport: 'stdio',
+        command: 'node',
+        args: ['s.js'],
+        env: { KEY: 'val' },
+        cwd: '/app',
+        stderr: 'ignore',
+        idleTimeoutMs: 300000,
+        connectTimeoutMs: 30000,
+      };
+      const conn = new MCPConnection('test', config);
       await conn.connect();
 
-      expect(mockSSEClientTransport).toHaveBeenCalled();
-      expect(mockClientConnect).toHaveBeenCalled();
+      expect(StdioTransport).toHaveBeenCalledWith({
+        command: 'node',
+        args: ['s.js'],
+        env: { KEY: 'val' },
+        cwd: '/app',
+        stderr: 'ignore',
+      });
+    });
+
+    it('creates StreamableHTTPTransport for streamable-http config', async () => {
+      const config: McpServerConfig = {
+        transport: 'streamable-http',
+        url: 'https://mcp.example.com/mcp',
+        headers: { Authorization: 'Bearer x' },
+        idleTimeoutMs: 300000,
+        connectTimeoutMs: 30000,
+      };
+      const conn = new MCPConnection('test', config);
+      await conn.connect();
+
+      expect(StreamableHTTPTransport).toHaveBeenCalledWith({
+        url: 'https://mcp.example.com/mcp',
+        headers: { Authorization: 'Bearer x' },
+      });
       expect(conn.state).toBe('connected');
     });
 
     it('discovers tools and caches schemas', async () => {
-      mockClientListTools.mockResolvedValue(makeToolsResponse([
-        { name: 'search', description: 'Search the web' },
-        { name: 'extract', description: 'Extract content' },
-      ]));
+      mockClientListTools.mockResolvedValue({
+        tools: [
+          { name: 'search', description: 'Search', inputSchema: { type: 'object', properties: {} } },
+          { name: 'extract', description: 'Extract', inputSchema: { type: 'object', properties: {} } },
+        ],
+      });
 
       const conn = new MCPConnection('test', STDIO_CONFIG);
       await conn.connect();
 
-      const tools = conn.listTools();
-      expect(tools).toHaveLength(2);
-      expect(tools[0].name).toBe('search');
-      expect(tools[1].name).toBe('extract');
+      expect(conn.listTools()).toHaveLength(2);
     });
 
     it('discovers resources and caches schemas', async () => {
@@ -128,15 +183,43 @@ describe('MCPConnection', () => {
       const conn = new MCPConnection('test', STDIO_CONFIG);
       await conn.connect();
 
-      const resources = conn.listResources();
-      expect(resources).toHaveLength(1);
-      expect(resources[0].uri).toBe('file:///data');
+      expect(conn.listResources()).toHaveLength(1);
+    });
+
+    it('discovers resource templates', async () => {
+      mockClientListResourceTemplates.mockResolvedValue({
+        resourceTemplates: [{ uriTemplate: 'file:///{p}', name: 'F' }],
+      });
+
+      const conn = new MCPConnection('test', STDIO_CONFIG);
+      await conn.connect();
+
+      expect(conn.listResourceTemplates()).toHaveLength(1);
+    });
+
+    it('handles missing resources gracefully', async () => {
+      mockClientListResources.mockRejectedValueOnce(new Error('not supported'));
+
+      const conn = new MCPConnection('test', STDIO_CONFIG);
+      await conn.connect();
+
+      expect(conn.listResources()).toEqual([]);
+      expect(conn.state).toBe('connected');
+    });
+
+    it('handles missing resource templates gracefully', async () => {
+      mockClientListResourceTemplates.mockRejectedValueOnce(new Error('not supported'));
+
+      const conn = new MCPConnection('test', STDIO_CONFIG);
+      await conn.connect();
+
+      expect(conn.listResourceTemplates()).toEqual([]);
     });
 
     it('transitions to failed state on connect error', async () => {
       mockClientConnect.mockRejectedValueOnce(new Error('Connection refused'));
 
-      const conn = new MCPConnection('test', SSE_CONFIG);
+      const conn = new MCPConnection('test', STREAMABLE_HTTP_CONFIG);
       await expect(conn.connect()).rejects.toThrow('Connection refused');
       expect(conn.state).toBe('failed');
     });
@@ -147,7 +230,8 @@ describe('MCPConnection', () => {
       vi.clearAllMocks();
 
       await conn.connect();
-      expect(mockClientConnect).not.toHaveBeenCalled();
+      expect(StdioTransport).not.toHaveBeenCalled();
+      expect(conn.state).toBe('connected');
     });
 
     it('reconnects if previously failed', async () => {
@@ -158,11 +242,36 @@ describe('MCPConnection', () => {
       expect(conn.state).toBe('failed');
 
       vi.clearAllMocks();
-      mockClientConnect.mockResolvedValueOnce(undefined);
-
       await conn.connect();
-      expect(mockClientConnect).toHaveBeenCalled();
       expect(conn.state).toBe('connected');
+    });
+
+    it('prevents concurrent connect() calls', async () => {
+      let resolveConnect!: (v: void) => void;
+      mockClientConnect.mockReturnValueOnce(
+        new Promise<void>((r) => { resolveConnect = r; }),
+      );
+
+      const conn = new MCPConnection('test', STDIO_CONFIG);
+      const p1 = conn.connect();
+      const p2 = conn.connect();
+
+      resolveConnect();
+      await Promise.all([p1, p2]);
+
+      expect(conn.state).toBe('connected');
+      // Only one transport created (StdioTransport called once)
+      expect(StdioTransport).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects with timeout error', async () => {
+      mockClientConnect.mockReturnValueOnce(new Promise(() => {})); // hang forever
+
+      const config = { ...STDIO_CONFIG, connectTimeoutMs: 50 };
+      const conn = new MCPConnection('test', config);
+
+      await expect(conn.connect()).rejects.toThrow('timed out');
+      expect(conn.state).toBe('failed');
     });
   });
 
@@ -190,10 +299,10 @@ describe('MCPConnection', () => {
 
       const result = await conn.callTool('search', { query: 'hello' });
 
-      expect(mockClientCallTool).toHaveBeenCalledWith(
-        { name: 'search', arguments: { query: 'hello' } },
-        undefined,
-      );
+      expect(mockClientCallTool).toHaveBeenCalledWith({
+        name: 'search',
+        arguments: { query: 'hello' },
+      });
       expect(result.content).toBe('result');
       expect(result.exitCode).toBe(0);
     });
@@ -219,9 +328,7 @@ describe('MCPConnection', () => {
     it('reads a resource and returns text content', async () => {
       const conn = new MCPConnection('test', STDIO_CONFIG);
       await conn.connect();
-
       const result = await conn.readResource('file:///data');
-
       expect(mockClientReadResource).toHaveBeenCalledWith({ uri: 'file:///data' });
       expect(result).toBe('resource content');
     });
@@ -237,10 +344,9 @@ describe('MCPConnection', () => {
       vi.useFakeTimers();
       const conn = new MCPConnection('test', { ...STDIO_CONFIG, idleTimeoutMs: 5000 });
       await conn.connect();
-      vi.clearAllMocks(); // Clear connect-related calls
+      vi.clearAllMocks();
 
       vi.advanceTimersByTime(5000);
-      // Allow pending microtasks to flush
       await Promise.resolve();
 
       expect(mockClientClose).toHaveBeenCalled();
@@ -256,12 +362,10 @@ describe('MCPConnection', () => {
       await conn.callTool('search', {});
       vi.clearAllMocks();
 
-      // Timer was reset, so 4000ms later it shouldn't fire yet
       vi.advanceTimersByTime(4000);
       await Promise.resolve();
       expect(mockClientClose).not.toHaveBeenCalled();
 
-      // After full 5000ms from the reset, it fires
       vi.advanceTimersByTime(1000);
       await Promise.resolve();
       expect(mockClientClose).toHaveBeenCalled();

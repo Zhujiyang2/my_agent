@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "tavily": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "tavily-mcp"],
+      "env": { "TAVILY_API_KEY": "test-key" },
+      "disabled": true,
+      "cwd": "/tmp",
+      "stderr": "ignore"
+    }
+  }
+}

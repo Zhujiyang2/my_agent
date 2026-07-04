@@ -9,6 +9,8 @@ export interface McpServerStatus {
   name: string;
   state: string;
   toolsAvailable: number;
+  resourcesAvailable: number;
+  disabled: boolean;
 }
 
 export interface McpConnectResult {
@@ -23,7 +25,7 @@ function stateDisplay(state: ConnectionState): string {
     case 'idle': return 'idle';
     default: {
       const _exhaustive: never = state;
-      return _exhaustive;
+      throw new Error(`Unknown connection state: ${String(_exhaustive)}`);
     }
   }
 }
@@ -44,6 +46,12 @@ export class MCPManager {
 
     // Create MCPConnection objects for each server (no connect)
     for (const [name, serverConfig] of Object.entries(config.mcpServers)) {
+      if (serverConfig.disabled) {
+        // Disabled servers are tracked but never connected.
+        // They still appear in listServers so LLM knows they exist.
+        this.connections.set(name, new MCPConnection(name, serverConfig));
+        continue;
+      }
       this.connections.set(name, new MCPConnection(name, serverConfig));
     }
   }
@@ -92,8 +100,12 @@ export class MCPManager {
   listServers(): McpServerStatus[] {
     return Array.from(this.connections.entries()).map(([name, conn]) => ({
       name,
-      state: stateDisplay(conn.state),
+      state: conn.config.disabled ? 'disabled' : stateDisplay(conn.state),
       toolsAvailable: conn.state === 'connected' ? conn.listTools().length : 0,
+      resourcesAvailable: conn.state === 'connected'
+        ? conn.listResources().length + conn.listResourceTemplates().length
+        : 0,
+      disabled: conn.config.disabled ?? false,
     }));
   }
 
@@ -124,9 +136,13 @@ export class MCPManager {
       },
       handler: async () => {
         const servers = this.listServers();
-        const lines = servers.map(s =>
-          `- ${s.name}: ${s.state}${s.toolsAvailable > 0 ? ` (${s.toolsAvailable} tools available)` : ''}`,
-        );
+        const lines = servers.map(s => {
+          const parts: string[] = [];
+          if (s.disabled) parts.push(' (disabled)');
+          if (s.toolsAvailable > 0) parts.push(` (${s.toolsAvailable} tools available)`);
+          if (s.resourcesAvailable > 0) parts.push(` (${s.resourcesAvailable} resources available)`);
+          return `- ${s.name}: ${s.state}${parts.join('')}`;
+        });
         return {
           content: lines.length > 0 ? lines.join('\n') : 'No MCP servers configured.',
           summary: `Listed ${servers.length} MCP server(s)`,

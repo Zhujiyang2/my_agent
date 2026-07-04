@@ -8,13 +8,14 @@ const mockDisconnect = vi.hoisted(() => vi.fn());
 const mockCallTool = vi.hoisted(() => vi.fn());
 const mockListTools = vi.hoisted(() => vi.fn());
 const mockListResources = vi.hoisted(() => vi.fn());
+const mockListResourceTemplates = vi.hoisted(() => vi.fn().mockReturnValue([]));
 const mockStateRef = vi.hoisted(() => ({ value: 'idle' as string }));
 
 vi.mock('../connection', () => ({
-  MCPConnection: vi.fn().mockImplementation(function (this: unknown, name: string) {
+  MCPConnection: vi.fn().mockImplementation(function (this: unknown, name: string, cfg?: Record<string, unknown>) {
     return {
       name,
-      config: {},
+      config: cfg ?? { disabled: false },
       get state() { return mockStateRef.value; },
       connect: mockConnect,
       disconnect: mockDisconnect,
@@ -22,6 +23,7 @@ vi.mock('../connection', () => ({
       readResource: vi.fn(),
       listTools: mockListTools,
       listResources: mockListResources,
+      listResourceTemplates: mockListResourceTemplates,
     };
   }),
 }));
@@ -36,11 +38,13 @@ const MCP_CONFIG: McpConfig = {
       command: 'npx',
       args: ['-y', '@anthropic/tavily-mcp'],
       idleTimeoutMs: 300000,
+      connectTimeoutMs: 30000,
     },
     filesystem: {
       transport: 'stdio' as const,
       command: 'node',
       idleTimeoutMs: 300000,
+      connectTimeoutMs: 30000,
     },
   },
 };
@@ -92,6 +96,34 @@ describe('MCPManager', () => {
       // Should not throw on second initialize
       manager2.initialize(MCP_CONFIG);
       expect(defaultRegistry.get('mcp_list_servers')).toBeDefined();
+    });
+
+    it('marks disabled servers in listServers', () => {
+      const configWithDisabled: McpConfig = {
+        mcpServers: {
+          active: {
+            transport: 'stdio' as const,
+            command: 'node',
+            idleTimeoutMs: 300000,
+            connectTimeoutMs: 30000,
+          },
+          disabled_one: {
+            transport: 'stdio' as const,
+            command: 'node',
+            disabled: true,
+            idleTimeoutMs: 300000,
+            connectTimeoutMs: 30000,
+          },
+        },
+      };
+      const manager = new MCPManager();
+      manager.initialize(configWithDisabled);
+
+      const servers = manager.listServers();
+      expect(servers).toHaveLength(2);
+      const disabled = servers.find(s => s.name === 'disabled_one')!;
+      expect(disabled.disabled).toBe(true);
+      expect(disabled.state).toBe('disabled');
     });
   });
 
@@ -171,7 +203,7 @@ describe('MCPManager', () => {
 
       const servers = manager.listServers();
       expect(servers).toHaveLength(2);
-      expect(servers[0]).toEqual({ name: 'tavily', state: 'idle', toolsAvailable: 0 });
+      expect(servers[0]).toEqual({ name: 'tavily', state: 'idle', toolsAvailable: 0, resourcesAvailable: 0, disabled: false });
     });
   });
 

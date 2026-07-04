@@ -17,7 +17,11 @@ describe('loadMcpConfig', () => {
       command: 'npx',
       args: ['-y', '@anthropic/tavily-mcp'],
       env: { TAVILY_API_KEY: 'test-key' },
+      cwd: undefined,
+      stderr: undefined,
+      disabled: false,
       idleTimeoutMs: 300000,
+      connectTimeoutMs: 30000,
     });
   });
 
@@ -28,7 +32,22 @@ describe('loadMcpConfig', () => {
       transport: 'sse',
       url: 'https://example.com/mcp',
       headers: { Authorization: 'Bearer xxx' },
+      disabled: false,
       idleTimeoutMs: 600000,
+      connectTimeoutMs: 30000,
+    });
+  });
+
+  it('parses disabled, cwd, and stderr fields', () => {
+    const result = loadMcpConfig(
+      'src/mcp/__tests__/fixtures/valid-stdio-with-options.json',
+    );
+    expect(result).not.toBeNull();
+    const server = result!.mcpServers['tavily'];
+    expect(server).toMatchObject({
+      disabled: true,
+      cwd: '/tmp',
+      stderr: 'ignore',
     });
   });
 
@@ -52,5 +71,10 @@ describe('loadMcpConfig', () => {
   it('applies default idleTimeoutMs (300000) when not specified', () => {
     const result = loadMcpConfig('src/mcp/__tests__/fixtures/valid-stdio.json');
     expect(result!.mcpServers['tavily'].idleTimeoutMs).toBe(300000);
+  });
+
+  it('applies default connectTimeoutMs (30000) when not specified', () => {
+    const result = loadMcpConfig('src/mcp/__tests__/fixtures/valid-stdio.json');
+    expect(result!.mcpServers['tavily'].connectTimeoutMs).toBe(30000);
   });
 });

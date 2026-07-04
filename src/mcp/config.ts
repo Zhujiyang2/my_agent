@@ -8,30 +8,49 @@ export interface StdioMcpServerConfig {
   command: string;
   args?: string[];
   env?: Record<string, string>;
+  cwd?: string;
+  stderr?: 'inherit' | 'ignore' | 'pipe';
+  disabled?: boolean;
   idleTimeoutMs: number;
+  connectTimeoutMs: number;
 }
 
 export interface SSEMcpServerConfig {
   transport: 'sse';
   url: string;
   headers?: Record<string, string>;
+  disabled?: boolean;
   idleTimeoutMs: number;
+  connectTimeoutMs: number;
 }
 
-export type McpServerConfig = StdioMcpServerConfig | SSEMcpServerConfig;
+export interface StreamableHTTPMcpServerConfig {
+  transport: 'streamable-http';
+  url: string;
+  headers?: Record<string, string>;
+  disabled?: boolean;
+  idleTimeoutMs: number;
+  connectTimeoutMs: number;
+}
+
+export type McpServerConfig =
+  | StdioMcpServerConfig
+  | SSEMcpServerConfig
+  | StreamableHTTPMcpServerConfig;
 
 export interface McpConfig {
   mcpServers: Record<string, McpServerConfig>;
 }
 
 const DEFAULT_IDLE_TIMEOUT_MS = 300_000; // 5 minutes
+const DEFAULT_CONNECT_TIMEOUT_MS = 30_000; // 30 seconds
 
 function validateMcpServerConfig(
   name: string,
   raw: Record<string, unknown>,
 ): McpServerConfig | null {
   const transport = raw.transport;
-  if (transport !== 'stdio' && transport !== 'sse') {
+  if (transport !== 'stdio' && transport !== 'sse' && transport !== 'streamable-http') {
     console.warn(`[mcp] Skipping server "${name}": missing or invalid "transport" field`);
     return null;
   }
@@ -43,9 +62,9 @@ function validateMcpServerConfig(
     }
   }
 
-  if (transport === 'sse') {
+  if (transport === 'sse' || transport === 'streamable-http') {
     if (typeof raw.url !== 'string' || raw.url === '') {
-      console.warn(`[mcp] Skipping server "${name}": sse transport requires "url"`);
+      console.warn(`[mcp] Skipping server "${name}": ${transport} transport requires "url"`);
       return null;
     }
   }
@@ -54,6 +73,14 @@ function validateMcpServerConfig(
     typeof raw.idleTimeoutMs === 'number' && raw.idleTimeoutMs > 0
       ? raw.idleTimeoutMs
       : DEFAULT_IDLE_TIMEOUT_MS;
+
+  const connectTimeoutMs =
+    typeof raw.connectTimeoutMs === 'number' && raw.connectTimeoutMs > 0
+      ? raw.connectTimeoutMs
+      : DEFAULT_CONNECT_TIMEOUT_MS;
+
+  const disabled =
+    typeof raw.disabled === 'boolean' ? raw.disabled : false;
 
   if (transport === 'stdio') {
     const args = Array.isArray(raw.args)
@@ -70,16 +97,30 @@ function validateMcpServerConfig(
       console.warn(`[mcp] Server "${name}": "env" must be an object with string values, ignoring`);
     }
 
+    const cwd =
+      typeof raw.cwd === 'string' && raw.cwd.length > 0
+        ? raw.cwd
+        : undefined;
+
+    const stderr =
+      raw.stderr === 'inherit' || raw.stderr === 'ignore' || raw.stderr === 'pipe'
+        ? raw.stderr
+        : undefined;
+
     return {
       transport: 'stdio',
       command: raw.command as string,
       args,
       env,
+      cwd,
+      stderr,
+      disabled,
       idleTimeoutMs,
+      connectTimeoutMs,
     } satisfies McpServerConfig;
   }
 
-  // transport === 'sse'
+  // transport === 'sse' or 'streamable-http'
   let headers: Record<string, string> | undefined;
   if (isValidStringRecord(raw.headers)) {
     headers = raw.headers;
@@ -88,10 +129,12 @@ function validateMcpServerConfig(
   }
 
   return {
-    transport: 'sse',
+    transport: transport as 'sse' | 'streamable-http',
     url: raw.url as string,
     headers,
+    disabled,
     idleTimeoutMs,
+    connectTimeoutMs,
   } satisfies McpServerConfig;
 }
 
