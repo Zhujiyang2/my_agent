@@ -7,6 +7,7 @@ import type { ToolRegistry } from '../tools/registry';
 import { defaultRegistry } from '../tools/registry';
 import { createContextManager } from '../context/manager';
 import type { ContextManager } from '../context/types';
+import { createManageContextTool } from '../tools/context/manage-context';
 
 export interface AgentOptions {
     onToken?: (token: string) => void;
@@ -40,6 +41,11 @@ export function createAgent(config: Config, options: AgentOptions = {}): AgentSe
         config.context,
         config.model,
     );
+
+    // Register manage_context tool if not already present (e.g., shared defaultRegistry)
+    if (!registry.get('manage_context')) {
+        registry.register(createManageContextTool(contextManager));
+    }
 
     async function send(input: string, signal?: AbortSignal): Promise<string> {
         const snapshotLength = contextManager.assemble().length;

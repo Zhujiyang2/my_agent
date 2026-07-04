@@ -248,13 +248,18 @@ describe('createAgent', () => {
     expect(toolsArg![0].function.name).toBe('echo');
   });
 
-  it('sends undefined tools when registry is empty', async () => {
+  it('sends tools when registry has only manage_context auto-registered', async () => {
     mockedChatStream.mockResolvedValueOnce(makeTextResult('ok'));
 
     const agent = createAgent(TEST_CONFIG, { registry });
     await agent.send('hi');
 
-    expect(mockedChatStream.mock.calls[0][2]).toBeUndefined();
+    const toolsArg = mockedChatStream.mock.calls[0][2] as Array<{ function: { name: string } }> | undefined;
+    expect(toolsArg).toBeDefined();
+    expect(toolsArg!.length).toBeGreaterThanOrEqual(1);
+    // manage_context should be auto-registered
+    const names = toolsArg!.map(t => t.function.name);
+    expect(names).toContain('manage_context');
   });
 
   it('stops after max_consecutive_failures is reached', async () => {
@@ -358,6 +363,54 @@ describe('ContextManager integration', () => {
         const history = [...agent.history];
         const toolMsg = history.find(m => m.role === 'tool');
         expect(toolMsg).toBeDefined();
+    });
+
+    it('manage_context tool can unpin an auto-pinned error', async () => {
+        // Use a fresh registry to avoid "already registered" errors with shared registry
+        // Use recent_rounds=0 so compact will immediately summarize unpinned tool messages
+        const localCm = createContextManager(
+            { max_context_tokens: 100000, recent_rounds: 0 },
+        );
+        const freshRegistry = createRegistry();
+
+        freshRegistry.register({
+            name: 'fail_then',
+            description: 'Always fails',
+            parameters: { type: 'object', properties: {}, required: [] },
+            handler: async () => ({
+                content: 'error: something broke',
+                summary: 'exit=1 | something broke',
+                exitCode: 1,
+                isError: true,
+                keyOutput: 'error: something broke',
+            }),
+        });
+
+        mockedChatStream
+            .mockResolvedValueOnce(makeToolCallResult('fail_then', {}, 'call_broken'))
+            .mockResolvedValueOnce(makeTextResult('The tool failed'));
+
+        const agent = createAgent(TEST_CONFIG, { registry: freshRegistry, contextManager: localCm });
+        await agent.send('test');
+
+        // Verify manage_context was auto-registered by createAgent
+        const manageTool = freshRegistry.get('manage_context');
+        expect(manageTool).toBeDefined();
+
+        // Unpin the auto-pinned error
+        const result = await manageTool!.handler({ action: 'unpin', tool_call_id: 'call_broken' });
+        expect(result.exitCode).toBe(0);
+        expect(result.summary).toContain('unpinned call_broken');
+
+        // After unpin + compact, the error content should differ (summarized)
+        localCm.compact();
+        const after = localCm.assemble();
+        const toolMsgs = after.filter(m => m.role === 'tool');
+        const errMsg = toolMsgs.find(m => (m as any).tool_call_id === 'call_broken');
+        expect(errMsg).toBeDefined();
+        // Unpinned + compacted = original content replaced by summary
+        expect(errMsg!.content).not.toBe('error: something broke');
+        expect(errMsg!.content).toContain('exit=1 | something broke');
     });
 
     it('compact runs after each round without error', async () => {
