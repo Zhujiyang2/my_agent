@@ -19,6 +19,9 @@ export interface ContextManager {
     /** Unpin a previously pinned message. */
     unpin(index: number): void;
 
+    /** Find the flow index of a tool message by its tool_call_id. Returns undefined if not found. */
+    findByToolCallId(toolCallId: string): number | undefined;
+
     /** Update a key in the state layer. */
     setState(key: string, value: unknown): void;
 
