@@ -112,9 +112,10 @@ export class MCPConnection {
         undefined,
       );
 
-      const textContent = result.content
-        .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
-        .map(c => c.text)
+      const contentItems = result.content as Array<{ type: string; text?: string }>;
+      const textContent = contentItems
+        .filter(c => c.type === 'text')
+        .map(c => c.text ?? '')
         .join('\n');
 
       this.resetIdleTimer();
@@ -140,9 +141,10 @@ export class MCPConnection {
 
     const result = await this.client.readResource({ uri });
     this.resetIdleTimer();
-    return result.contents
-      .filter((c): c is { text: string } => 'text' in c)
-      .map(c => c.text)
+    const contents = result.contents as Array<{ text?: string; uri?: string }>;
+    return contents
+      .filter(c => 'text' in c && typeof c.text === 'string')
+      .map(c => c.text!)
       .join('\n');
   }
 
