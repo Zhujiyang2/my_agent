@@ -64,6 +64,15 @@ describe('createManageContextTool', () => {
     expect(result.content).toContain('no tool message found');
   });
 
+  it('returns error when tool_call_id is not found (pin action)', async () => {
+    const tool = createManageContextTool(cm);
+    const result = await tool.handler({ action: 'pin', tool_call_id: 'nonexistent' });
+
+    expect(result.isError).toBe(true);
+    expect(result.exitCode).toBe(1);
+    expect(result.content).toContain('no tool message found');
+  });
+
   it('returns error for invalid action', async () => {
     cm.append(toolMsg('call_1'));
     const tool = createManageContextTool(cm);

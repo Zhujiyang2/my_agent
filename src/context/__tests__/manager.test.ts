@@ -189,11 +189,12 @@ describe('createContextManager', () => {
     });
 
     it('only matches tool messages, not other roles', () => {
-        cm.append({ role: 'user', content: 'hello', tool_call_id: 'not_real' } as any);
-        cm.append(toolMsg('real tool', 'call_real', 'run_command'));
+        // A non-tool message with the same tool_call_id should NOT match
+        cm.append({ role: 'user', content: 'hello', tool_call_id: 'call_same' } as any);
+        cm.append(toolMsg('real tool', 'call_same', 'run_command'));
 
-        const idx = cm.findByToolCallId('call_real');
-        expect(idx).toBe(1);
+        const idx = cm.findByToolCallId('call_same');
+        expect(idx).toBe(1); // should find the tool message at index 1, not the user message at index 0
         expect(cm.assemble()[idx!].role).toBe('tool');
     });
 

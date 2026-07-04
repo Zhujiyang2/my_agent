@@ -165,8 +165,11 @@ export function createAgent(config: Config, options: AgentOptions = {}): AgentSe
                     contextManager.append(toolMsg as Message);
 
                     // Auto-pin error results
+                    // Note: assemble() prepends a state message when state is non-empty,
+                    // so we need to account for that to get the correct flow index.
                     if (toolResult.isError) {
-                        const flowIdx = contextManager.assemble().length - 1;
+                        const hasState = Object.keys(contextManager.getState()).length > 0;
+                        const flowIdx = contextManager.assemble().length - 1 - (hasState ? 1 : 0);
                         contextManager.pin(flowIdx);
                     }
 

@@ -148,7 +148,8 @@ export function createContextManager(config: ContextConfig, model = 'gpt-4o'): C
 
     function findByToolCallId(toolCallId: string): number | undefined {
         for (let i = flow.length - 1; i >= 0; i--) {
-            const msg = flow[i].message as Record<string, unknown>;
+            const msg = flow[i].message;
+            if (msg.role !== 'tool') continue;
             if (msg.tool_call_id === toolCallId) return i;
         }
         return undefined;
