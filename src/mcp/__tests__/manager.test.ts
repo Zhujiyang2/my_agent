@@ -28,7 +28,6 @@ vi.mock('../connection', () => ({
 
 import { MCPManager, setMCPManager, getMCPManager } from '../manager';
 import { defaultRegistry } from '../../tools/registry';
-import type { McpServerConfig } from '../config';
 
 const MCP_CONFIG: McpConfig = {
   mcpServers: {

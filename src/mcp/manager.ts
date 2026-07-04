@@ -17,9 +17,15 @@ export interface McpConnectResult {
 }
 
 function stateDisplay(state: ConnectionState): string {
-  if (state === 'connected') return 'connected';
-  if (state === 'failed') return 'error';
-  return 'idle';
+  switch (state) {
+    case 'connected': return 'connected';
+    case 'failed': return 'error';
+    case 'idle': return 'idle';
+    default: {
+      const _exhaustive: never = state;
+      return _exhaustive;
+    }
+  }
 }
 
 export class MCPManager {
@@ -49,6 +55,14 @@ export class MCPManager {
     }
 
     await conn.connect();
+
+    // Remove stale registrations from a previous connect cycle
+    const prefix = `mcp__${serverName}__`;
+    for (const tool of defaultRegistry.getAll()) {
+      if (tool.name.startsWith(prefix)) {
+        defaultRegistry.remove(tool.name);
+      }
+    }
 
     const schemas = conn.listTools();
     const tools: string[] = [];
