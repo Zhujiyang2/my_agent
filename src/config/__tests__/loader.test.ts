@@ -44,6 +44,12 @@ describe('loadConfig', () => {
         default_timeout_ms: 600000,
         max_inbox_size: 50,
       },
+      memory: {
+        enabled: false,
+        user_budget: 100,
+        agent_budget: 100,
+        compress_threshold: 0.8,
+      },
     });
   });
 
