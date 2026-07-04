@@ -53,6 +53,12 @@ export class MCPConnection {
     if (this._state === 'connected') return;
 
     try {
+      // Clean up any previous client from a failed connect attempt
+      if (this.client) {
+        try { await this.client.close(); } catch { /* ignore */ }
+        this.client = null;
+      }
+
       const transport = this.createTransport();
       this.client = new Client(
         { name: 'my-agent', version: '0.1.0' },
@@ -71,18 +77,28 @@ export class MCPConnection {
         },
       }));
 
-      // Discover resources
-      const resourcesResult = await this.client.listResources();
-      this.resourceSchemas = (resourcesResult.resources ?? []).map(r => ({
-        uri: r.uri,
-        name: r.name,
-        description: r.description,
-        mimeType: r.mimeType,
-      }));
+      // Discover resources (optional — server may not support this capability)
+      try {
+        const resourcesResult = await this.client.listResources();
+        this.resourceSchemas = (resourcesResult.resources ?? []).map(r => ({
+          uri: r.uri,
+          name: r.name,
+          description: r.description,
+          mimeType: r.mimeType,
+        }));
+      } catch {
+        // Server may not advertise resources capability — that's fine
+        this.resourceSchemas = [];
+      }
 
       this._state = 'connected';
       this.startIdleTimer();
     } catch (e) {
+      // Clean up the failed client
+      if (this.client) {
+        try { await this.client.close(); } catch { /* ignore */ }
+        this.client = null;
+      }
       this._state = 'failed';
       throw e;
     }
@@ -106,6 +122,9 @@ export class MCPConnection {
       throw new Error(`MCP server "${this.name}" is not connected`);
     }
 
+    // Suspend idle timer during the call to prevent mid-flight disconnect
+    this.clearIdleTimer();
+
     try {
       const result = await this.client.callTool(
         { name, arguments: args },
@@ -118,13 +137,15 @@ export class MCPConnection {
         .map(c => c.text ?? '')
         .join('\n');
 
-      this.resetIdleTimer();
+      this.startIdleTimer();
       return {
         content: textContent,
         summary: `mcp__${this.name}__${name}: ${textContent.slice(0, 100)}`,
         exitCode: 0,
       };
     } catch (e) {
+      // Restart timer even on error — keeps the connection alive for retries
+      this.startIdleTimer();
       return {
         content: `MCP tool "${name}" error: ${e instanceof Error ? e.message : String(e)}`,
         summary: `mcp__${this.name}__${name}: ${e instanceof Error ? e.message : String(e)}`,
@@ -162,6 +183,7 @@ export class MCPConnection {
       return new StdioClientTransport({
         command: config.command,
         args: config.args,
+        env: config.env,
       });
     } else {
       return new SSEClientTransport(new URL(config.url));
