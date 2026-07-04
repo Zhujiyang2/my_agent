@@ -21,6 +21,8 @@ import '../src/tools/subagent/index.js';
 import { setExecutorCallbacks } from '../src/tools/executor.js';
 import { promptConfirm } from '../src/cli/chat.js';
 import { SubagentManager, setSubagentManager } from '../src/agent/subagent/manager.js';
+import { loadMcpConfig } from '../src/mcp/config.js';
+import { MCPManager, setMCPManager } from '../src/mcp/manager.js';
 
 const nodeVersion = process.versions.node.split('.').map(Number);
 if (nodeVersion[0] < 18) {
@@ -77,6 +79,16 @@ async function main(): Promise<void> {
   const subagentManager = new SubagentManager(config);
   setSubagentManager(subagentManager);
 
+  // Initialize MCP manager — loads ~/.my_agent/mcp.json, registers management tools
+  const mcpConfig = loadMcpConfig();
+  const mcpManager = new MCPManager();
+  mcpManager.initialize(mcpConfig);
+  setMCPManager(mcpManager);
+  if (mcpConfig) {
+    const count = Object.keys(mcpConfig.mcpServers).length;
+    console.log(formatInfo(`  MCP: ${count} server(s) configured`));
+  }
+
   // Set up safety confirmation — must be after rl creation
   setExecutorCallbacks({
     onConfirm: async (command: string, category: string) => {
@@ -132,6 +144,7 @@ async function main(): Promise<void> {
 
   rl.on('close', () => {
     subagentManager.destroy();
+    mcpManager.destroy().catch(() => {});
     process.exit(0);
   });
 }
