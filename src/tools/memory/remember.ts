@@ -8,7 +8,7 @@ export function createRememberTool(mm: MemoryManager): ToolDefinition {
     description:
       '保存一条长期记忆。Agent 应该在有价值的信息出现时主动调用，' +
       '如用户说明编码偏好、工作原则、项目约定等。' +
-      '注意：不要存储密码、Token、姓名、工号、邮箱、手机号、IP 地址等敏感信息。',
+      'IP地址和凭证信息会自动加密存储，使用时解密。但请避免存储姓名、手机号、邮箱、工号等个人身份信息（PII），这些会被永久脱敏。',
     parameters: {
       type: 'object',
       properties: {
@@ -38,7 +38,7 @@ export function createRememberTool(mm: MemoryManager): ToolDefinition {
       const content = String(params.content ?? '');
       const type = String(params.type ?? '');
 
-      if (!/^[a-z][a-z0-9-]*$/.test(name)) {
+      if (!/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/.test(name)) {
         return {
           content: `Invalid memory name: "${name}". Must be kebab-case (lowercase letters, digits, hyphens only, starting with a letter).`,
           summary: `remember failed: invalid name "${name}"`,

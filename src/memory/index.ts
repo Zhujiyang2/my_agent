@@ -37,7 +37,7 @@ export function createMemoryManager(config: MemoryConfig): MemoryManager {
   }
 
   function assemble(): string | null {
-    const names = [...storeUser.list(), ...storeAgent.list()];
+    const names = [...new Set([...storeUser.list(), ...storeAgent.list()])];
     if (names.length === 0) {
       lastUserWarnings = [];
       return null;
@@ -91,6 +91,14 @@ export function createMemoryManager(config: MemoryConfig): MemoryManager {
 
     const now = new Date().toISOString();
 
+    // Prevent name collision across user/agent stores
+    const otherStore = entry.type === 'user' ? storeAgent : storeUser;
+    if (otherStore.read(entry.name)) {
+      throw new Error(
+        `Memory name "${entry.name}" already exists in ${entry.type === 'user' ? 'agent' : 'user'} store. Use a different name.`,
+      );
+    }
+
     let accessedAt = now;
     const existing = storeFor(entry.type).read(entry.name);
     if (existing && entry.type === 'user') {
@@ -125,7 +133,8 @@ export function createMemoryManager(config: MemoryConfig): MemoryManager {
   }
 
   async function forget(name: string): Promise<void> {
-    storeUser.delete(name) || storeAgent.delete(name);
+    storeUser.delete(name);
+    storeAgent.delete(name);
   }
 
   async function list(): Promise<string[]> {

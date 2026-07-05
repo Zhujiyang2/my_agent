@@ -172,13 +172,20 @@ export function createMemoryStore(memoryDir: string): MemoryStore {
     const fp = filePath(name);
     if (!fs.existsSync(fp)) return;
 
-    // Read raw file, replace only the accessed_at line
     const raw = fs.readFileSync(fp, 'utf-8');
-    const updated = raw.replace(
+
+    // Only update within frontmatter (between first --- and second ---)
+    const fmEnd = raw.indexOf('---', 4); // skip first ---
+    if (fmEnd === -1) return;
+
+    const fm = raw.slice(0, fmEnd);
+    const rest = raw.slice(fmEnd);
+    const updatedFm = fm.replace(
       /^(\s+accessed_at: ).*$/m,
       `$1${timestamp}`,
     );
-    fs.writeFileSync(fp, updated, 'utf-8');
+
+    fs.writeFileSync(fp, updatedFm + rest, 'utf-8');
   }
 
   return { write, read, delete: deleteFile, list, updateAccessedAt };

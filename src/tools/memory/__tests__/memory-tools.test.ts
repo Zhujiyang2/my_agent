@@ -66,6 +66,18 @@ describe('remember tool', () => {
     expect(result.content).toContain('Invalid memory name');
   });
 
+  it('rejects names with trailing hyphen (store rejects them)', async () => {
+    const tool = createRememberTool(mm);
+    const result = await tool.handler({
+      name: 'bad-',
+      description: 'Test',
+      content: 'Content.',
+      type: 'user',
+    });
+
+    expect(result.isError).toBe(true);
+  });
+
   it('rejects invalid type', async () => {
     const tool = createRememberTool(mm);
     const result = await tool.handler({
