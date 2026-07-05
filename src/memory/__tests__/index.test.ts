@@ -110,7 +110,7 @@ describe('createMemoryManager', () => {
     });
 
     // File on disk should NOT contain the plaintext secret
-    const filePath = path.join(TEST_DIR, 'test.md');
+    const filePath = path.join(TEST_DIR, 'user', 'test.md');
     const diskContent = fs.readFileSync(filePath, 'utf-8');
     expect(diskContent).not.toContain('secret123');
     expect(diskContent).toMatch(/\{enc:/);
@@ -129,7 +129,7 @@ describe('createMemoryManager', () => {
     });
 
     // Disk: encoded
-    const filePath = path.join(TEST_DIR, 'server.md');
+    const filePath = path.join(TEST_DIR, 'user', 'server.md');
     const diskContent = fs.readFileSync(filePath, 'utf-8');
     expect(diskContent).not.toContain('192.168.1.100');
     expect(diskContent).toMatch(/\{enc:/);
@@ -148,7 +148,7 @@ describe('createMemoryManager', () => {
     });
 
     // Read the current accessed_at
-    const filePath = path.join(TEST_DIR, 'frequent.md');
+    const filePath = path.join(TEST_DIR, 'agent', 'frequent.md');
     const before = fs.readFileSync(filePath, 'utf-8');
     const beforeMatch = before.match(/accessed_at: (.+)/);
     const beforeTime = beforeMatch ? beforeMatch[1] : '';
@@ -170,5 +170,30 @@ describe('createMemoryManager', () => {
     // Body on disk must still be encoded (not leaked plaintext)
     expect(after).not.toContain('192.168.1.100');
     expect(after).toMatch(/\{enc:/);
+  });
+
+  it('stores user and agent memories in separate subdirectories', async () => {
+    await mgr.remember({
+      name: 'user-mem', description: 'User', content: 'User content.', type: 'user',
+    });
+    await mgr.remember({
+      name: 'agent-mem', description: 'Agent', content: 'Agent content.', type: 'agent',
+    });
+
+    expect(fs.existsSync(path.join(TEST_DIR, 'user', 'user-mem.md'))).toBe(true);
+    expect(fs.existsSync(path.join(TEST_DIR, 'agent', 'agent-mem.md'))).toBe(true);
+    // Old flat path should not exist
+    expect(fs.existsSync(path.join(TEST_DIR, 'user-mem.md'))).toBe(false);
+
+    // list() returns names from both subdirs
+    const names = await mgr.list();
+    expect(names).toContain('user-mem');
+    expect(names).toContain('agent-mem');
+
+    // forget works for both
+    await mgr.forget('user-mem');
+    await mgr.forget('agent-mem');
+    expect(fs.existsSync(path.join(TEST_DIR, 'user', 'user-mem.md'))).toBe(false);
+    expect(fs.existsSync(path.join(TEST_DIR, 'agent', 'agent-mem.md'))).toBe(false);
   });
 });

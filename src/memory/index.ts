@@ -1,4 +1,5 @@
 // src/memory/index.ts
+import path from 'node:path';
 import { estimateTokens } from '../context/token-counter';
 import type { Message } from '../llm/types';
 import { createMemoryStore, type MemoryStore } from './store';
@@ -27,11 +28,16 @@ function tokenCounter(content: string): number {
 }
 
 export function createMemoryManager(config: MemoryConfig): MemoryManager {
-  const store: MemoryStore = createMemoryStore(config.memoryDir);
+  const storeUser: MemoryStore = createMemoryStore(path.join(config.memoryDir, 'user'));
+  const storeAgent: MemoryStore = createMemoryStore(path.join(config.memoryDir, 'agent'));
   let lastUserWarnings: string[] = [];
 
+  function storeFor(type: 'user' | 'agent'): MemoryStore {
+    return type === 'user' ? storeUser : storeAgent;
+  }
+
   function assemble(): string | null {
-    const names = store.list();
+    const names = [...storeUser.list(), ...storeAgent.list()];
     if (names.length === 0) {
       lastUserWarnings = [];
       return null;
@@ -40,13 +46,14 @@ export function createMemoryManager(config: MemoryConfig): MemoryManager {
     const files: MemoryFile[] = [];
     const now = new Date().toISOString();
     for (const name of names) {
-      const file = store.read(name);
+      // Try both stores (names are unique across user/agent dirs)
+      const file = storeUser.read(name) ?? storeAgent.read(name);
       if (file) {
         // Decode reversible encodings so Agent sees real values
         file.body = decode(file.body);
         file.description = decode(file.description);
         // Update access time on disk (for LRU), touch only the frontmatter
-        store.updateAccessedAt(name, now);
+        storeFor(file.metadata.type).updateAccessedAt(name, now);
         files.push(file);
       }
     }
@@ -85,7 +92,7 @@ export function createMemoryManager(config: MemoryConfig): MemoryManager {
     const now = new Date().toISOString();
 
     let accessedAt = now;
-    const existing = store.read(entry.name);
+    const existing = storeFor(entry.type).read(entry.name);
     if (existing && entry.type === 'user') {
       accessedAt = existing.metadata.accessed_at;
     }
@@ -101,16 +108,16 @@ export function createMemoryManager(config: MemoryConfig): MemoryManager {
       body: encodeResult.content,
     };
 
-    store.write(file);
+    storeFor(entry.type).write(file);
 
     if (entry.type === 'agent') {
-      const allFiles = store.list()
-        .map(n => store.read(n))
-        .filter((f): f is MemoryFile => f !== null && f.metadata.type === 'agent');
+      const agentFiles = storeAgent.list()
+        .map(n => storeAgent.read(n))
+        .filter((f): f is MemoryFile => f !== null);
 
-      const toRemove = evictAgent(allFiles, config.agent_budget, tokenCounter);
+      const toRemove = evictAgent(agentFiles, config.agent_budget, tokenCounter);
       for (const name of toRemove) {
-        store.delete(name);
+        storeAgent.delete(name);
       }
     }
 
@@ -118,11 +125,11 @@ export function createMemoryManager(config: MemoryConfig): MemoryManager {
   }
 
   async function forget(name: string): Promise<void> {
-    store.delete(name);
+    storeUser.delete(name) || storeAgent.delete(name);
   }
 
   async function list(): Promise<string[]> {
-    return store.list();
+    return [...storeUser.list(), ...storeAgent.list()];
   }
 
   return { assemble, getUserWarnings, remember, forget, list };
