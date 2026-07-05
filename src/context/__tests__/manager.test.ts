@@ -332,6 +332,47 @@ describe('createContextManager', () => {
         cm.truncateTo(5);
         expect(cm.assemble()).toHaveLength(1);
     });
+
+    // === clear ===
+
+    it('clear resets flow and state', () => {
+        cm.append(userMsg('hello'));
+        cm.append(assistantMsg('hi'));
+        cm.setState('key', 'value');
+        cm.clear();
+
+        expect(cm.assemble()).toHaveLength(0);
+        expect(cm.getState()).toEqual({});
+    });
+
+    it('clear resets round counter', () => {
+        cm.append(userMsg('q1'));  // round 1
+        cm.append(assistantMsg('a1'));
+        cm.append(userMsg('q2'));  // round 2
+        cm.clear();
+        cm.append(userMsg('after clear'));
+
+        const entries = cm.getFlowEntries();
+        expect(entries[0].round).toBe(1);
+    });
+
+    // === getFlowEntries ===
+
+    it('getFlowEntries returns all flow entries with metadata', () => {
+        cm.append(userMsg('hello'));
+        cm.append(assistantMsg('hi'));
+
+        const entries = cm.getFlowEntries();
+        expect(entries).toHaveLength(2);
+        expect(entries[0].message.role).toBe('user');
+        expect(entries[0].round).toBe(1);
+        expect(entries[0].pinned).toBe(false);
+        expect(entries[1].message.role).toBe('assistant');
+    });
+
+    it('getFlowEntries returns empty array when flow is empty', () => {
+        expect(cm.getFlowEntries()).toEqual([]);
+    });
 });
 
 describe('createContextManager with MemoryManager', () => {

@@ -176,6 +176,23 @@ export function createContextManager(config: ContextConfig, model = 'gpt-4o', me
         }
     }
 
+    function clear(): void {
+        flow.length = 0;
+        for (const key of Object.keys(state)) {
+            delete state[key];
+        }
+        currentRound = 0;
+        cancelled = false;
+    }
+
+    function getFlowEntries(): ReadonlyArray<{
+        message: Message;
+        round: number;
+        pinned: boolean;
+    }> {
+        return flow;
+    }
+
     function cancelAll(): void {
         cancelled = true;
     }
@@ -190,6 +207,8 @@ export function createContextManager(config: ContextConfig, model = 'gpt-4o', me
         setState,
         getState,
         truncateTo,
+        clear,
+        getFlowEntries,
         cancelAll,
     };
 }

@@ -31,6 +31,16 @@ export interface ContextManager {
     /** Remove all messages after the first `count` messages (for error rollback). */
     truncateTo(count: number): void;
 
+    /** Reset flow, state, round counter, and cancelled flag. Memory layer is preserved. */
+    clear(): void;
+
+    /** Read-only view of flow entries. */
+    getFlowEntries(): ReadonlyArray<{
+        message: Message;
+        round: number;
+        pinned: boolean;
+    }>;
+
     /** Cancel pending work (for Ctrl+C). */
     cancelAll(): void;
 }
