@@ -98,6 +98,13 @@ export function createAgent(config: Config, options: AgentOptions = {}): AgentSe
 
                 if (result.toolCalls.length === 0) {
                     contextManager.append({ role: 'assistant', content: result.content });
+
+                    // Surface user-facing memory warnings
+                    const warnings = memoryManager?.getUserWarnings();
+                    if (warnings && warnings.length > 0) {
+                      return warnings.join('\n') + '\n' + result.content;
+                    }
+
                     return result.content;
                 }
 

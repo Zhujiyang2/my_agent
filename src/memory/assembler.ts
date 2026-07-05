@@ -8,17 +8,23 @@ interface AssembleConfig {
   agent_budget: number;
 }
 
+export interface AssembleResult {
+  content: string | null;
+  userWarnings: string[];
+}
+
 export function assembleMemory(
   files: MemoryFile[],
   config: AssembleConfig,
   estimateTokens: TokenEstimator,
-): string | null {
-  if (files.length === 0) return null;
+): AssembleResult {
+  if (files.length === 0) return { content: null, userWarnings: [] };
 
   const userFiles = files.filter(f => f.metadata.type === 'user');
   const agentFiles = files.filter(f => f.metadata.type === 'agent');
 
   const sections: string[] = [];
+  const userWarnings: string[] = [];
 
   if (config.user_budget > 0 && userFiles.length > 0) {
     const result = buildSection('User Memories', userFiles, config.user_budget, estimateTokens);
@@ -26,9 +32,12 @@ export function assembleMemory(
       sections.push(result.content);
       if (result.usagePercent >= 90 || result.skipped > 0) {
         const skippedMsg = result.skipped > 0
-          ? `${result.skipped} older user memories skipped, `
+          ? `${result.skipped} older entries skipped, `
           : '';
-        sections.push(`⚠️ ${skippedMsg}user memory budget ${result.usagePercent}% used (${result.usagePercent >= 100 ? 'over' : 'near'} limit). Please remind the user to review and clean up their memories at ~/.my_agent/memory/.`);
+        userWarnings.push(
+          `\x1b[33m⚠ Memory: ${skippedMsg}user memory ${result.usagePercent}% full.\x1b[0m\n` +
+          `  Review and clean up at ~/.my_agent/memory/`
+        );
       }
     }
   }
@@ -38,9 +47,9 @@ export function assembleMemory(
     if (result) sections.push(result.content);
   }
 
-  if (sections.length === 0) return null;
+  if (sections.length === 0) return { content: null, userWarnings };
 
-  return sections.join('\n\n');
+  return { content: sections.join('\n\n'), userWarnings };
 }
 
 interface SectionResult {

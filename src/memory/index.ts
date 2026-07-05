@@ -11,6 +11,7 @@ export type { MemoryConfig, MemoryEntry, MemoryFile } from './types';
 
 export interface MemoryManager {
   assemble(): string | null;
+  getUserWarnings(): string[];
   remember(entry: MemoryEntry): Promise<{ warnings: string[] }>;
   forget(name: string): Promise<void>;
   list(): Promise<string[]>;
@@ -27,10 +28,14 @@ function tokenCounter(content: string): number {
 
 export function createMemoryManager(config: MemoryConfig): MemoryManager {
   const store: MemoryStore = createMemoryStore(config.memoryDir);
+  let lastUserWarnings: string[] = [];
 
   function assemble(): string | null {
     const names = store.list();
-    if (names.length === 0) return null;
+    if (names.length === 0) {
+      lastUserWarnings = [];
+      return null;
+    }
 
     const files: MemoryFile[] = [];
     for (const name of names) {
@@ -38,19 +43,27 @@ export function createMemoryManager(config: MemoryConfig): MemoryManager {
       if (file) files.push(file);
     }
 
-    if (files.length === 0) return null;
+    if (files.length === 0) {
+      lastUserWarnings = [];
+      return null;
+    }
 
     const userFiles = files.filter(f => f.metadata.type === 'user');
     const agentFiles = files.filter(f => f.metadata.type === 'agent');
 
-    // User memories: never compress, assembler skips oldest when over budget
-    // Agent memories: LRU eviction handled in remember()
     const allFiles = [...userFiles, ...agentFiles];
 
-    return assembleMemory(allFiles, {
+    const result = assembleMemory(allFiles, {
       user_budget: config.user_budget,
       agent_budget: config.agent_budget,
     }, tokenCounter);
+
+    lastUserWarnings = result.userWarnings;
+    return result.content;
+  }
+
+  function getUserWarnings(): string[] {
+    return lastUserWarnings;
   }
 
   async function remember(entry: MemoryEntry): Promise<{ warnings: string[] }> {
@@ -104,5 +117,5 @@ export function createMemoryManager(config: MemoryConfig): MemoryManager {
     return store.list();
   }
 
-  return { assemble, remember, forget, list };
+  return { assemble, getUserWarnings, remember, forget, list };
 }
