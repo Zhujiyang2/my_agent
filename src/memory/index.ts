@@ -3,7 +3,7 @@ import { estimateTokens } from '../context/token-counter';
 import type { Message } from '../llm/types';
 import { createMemoryStore, type MemoryStore } from './store';
 import { sanitize } from './sanitizer';
-import { evictAgent, compressUser } from './evictor';
+import { evictAgent } from './evictor';
 import { assembleMemory } from './assembler';
 import type { MemoryConfig, MemoryEntry, MemoryFile } from './types';
 
@@ -43,9 +43,9 @@ export function createMemoryManager(config: MemoryConfig): MemoryManager {
     const userFiles = files.filter(f => f.metadata.type === 'user');
     const agentFiles = files.filter(f => f.metadata.type === 'agent');
 
-    const compressedUser = compressUser(userFiles, config.compress_threshold, tokenCounter);
-
-    const allFiles = [...compressedUser, ...agentFiles];
+    // User memories: never compress, assembler skips oldest when over budget
+    // Agent memories: LRU eviction handled in remember()
+    const allFiles = [...userFiles, ...agentFiles];
 
     return assembleMemory(allFiles, {
       user_budget: config.user_budget,
