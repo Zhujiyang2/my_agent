@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { defaultRegistry } from '../../tools/registry';
+import { createRegistry, defaultRegistry } from '../../tools/registry';
 import { loadSkills } from '../skill-tool';
 
 function createTempDir(): string {
@@ -30,12 +30,7 @@ ${body}`;
 
 describe('loadSkills', () => {
   afterEach(() => {
-    // Remove the Skill tool if it was registered
-    try {
-      defaultRegistry.remove('Skill');
-    } catch {
-      // ignore
-    }
+    try { defaultRegistry.remove('Skill'); } catch { /* ignore */ }
   });
 
   it('does not register a tool when the directory does not exist', () => {
@@ -47,6 +42,18 @@ describe('loadSkills', () => {
     const dir = createTempDir();
     try {
       loadSkills(dir);
+      expect(defaultRegistry.get('Skill')).toBeUndefined();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not register a tool when the path is a file, not a directory', () => {
+    const dir = createTempDir();
+    const filePath = path.join(dir, 'not-a-dir');
+    fs.writeFileSync(filePath, 'hello', 'utf-8');
+    try {
+      loadSkills(filePath);
       expect(defaultRegistry.get('Skill')).toBeUndefined();
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -76,15 +83,12 @@ describe('loadSkills', () => {
   it('skips .md files without valid frontmatter', () => {
     const dir = createTempDir();
     try {
-      // File with no frontmatter
       fs.writeFileSync(path.join(dir, 'no-fm.md'), '# No frontmatter\n\nJust content.', 'utf-8');
-      // File missing description
       fs.writeFileSync(
         path.join(dir, 'no-desc.md'),
         '---\nname: incomplete\n---\n\nBody.',
         'utf-8',
       );
-      // Valid file
       writeSkillFile(dir, 'valid.md', 'valid', 'A valid skill');
 
       loadSkills(dir);
@@ -92,6 +96,39 @@ describe('loadSkills', () => {
       const tool = defaultRegistry.get('Skill');
       expect(tool).toBeDefined();
       expect(tool!.parameters.properties.name.enum).toEqual(['valid']);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects skill with empty name (whitespace-only)', () => {
+    const dir = createTempDir();
+    try {
+      writeSkillFile(dir, 'empty-name.md', '   ', 'Some description');
+      writeSkillFile(dir, 'valid.md', 'valid', 'A valid skill');
+
+      loadSkills(dir);
+
+      const tool = defaultRegistry.get('Skill');
+      expect(tool).toBeDefined();
+      expect(tool!.parameters.properties.name.enum).toEqual(['valid']);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('strips surrounding quotes from both name and description', () => {
+    const dir = createTempDir();
+    try {
+      writeSkillFile(dir, 'quoted.md', '"my-skill"', '"A quoted description"');
+
+      loadSkills(dir);
+
+      const tool = defaultRegistry.get('Skill');
+      expect(tool).toBeDefined();
+      expect(tool!.parameters.properties.name.enum).toEqual(['my-skill']);
+      expect(tool!.description).toContain('my-skill - A quoted description');
+      expect(tool!.description).not.toContain('"');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -107,9 +144,7 @@ describe('loadSkills', () => {
 
       const tool = defaultRegistry.get('Skill');
       expect(tool).toBeDefined();
-      // enum should have one entry (no duplicates)
       expect(tool!.parameters.properties.name.enum).toEqual(['dup']);
-      // description should be from the second file
       expect(tool!.description).toContain('Second version');
       expect(tool!.description).not.toContain('First version');
     } finally {
@@ -117,17 +152,71 @@ describe('loadSkills', () => {
     }
   });
 
-  it('strips surrounding quotes from description', () => {
+  it('handles .MD uppercase extension on case-insensitive filesystems', () => {
     const dir = createTempDir();
     try {
-      writeSkillFile(dir, 'quoted.md', 'quoted', '"A quoted description"');
+      writeSkillFile(dir, 'UPPER.MD', 'upper', 'An uppercase extension skill');
 
       loadSkills(dir);
 
       const tool = defaultRegistry.get('Skill');
       expect(tool).toBeDefined();
-      expect(tool!.description).toContain('quoted - A quoted description');
-      expect(tool!.description).not.toContain('"');
+      expect(tool!.parameters.properties.name.enum).toEqual(['upper']);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('registers into a custom registry when provided', () => {
+    const customRegistry = createRegistry();
+    const dir = createTempDir();
+    try {
+      writeSkillFile(dir, 'custom.md', 'custom', 'Custom registry skill');
+      loadSkills(dir, customRegistry);
+
+      // defaultRegistry should NOT have it
+      expect(defaultRegistry.get('Skill')).toBeUndefined();
+      // customRegistry SHOULD have it
+      const tool = customRegistry.get('Skill');
+      expect(tool).toBeDefined();
+      expect(tool!.parameters.properties.name.enum).toEqual(['custom']);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not throw on duplicate loadSkills call (idempotent)', () => {
+    const dir = createTempDir();
+    try {
+      writeSkillFile(dir, 'a.md', 'a', 'Skill A');
+
+      // First call registers
+      loadSkills(dir);
+      const tool1 = defaultRegistry.get('Skill');
+      expect(tool1).toBeDefined();
+
+      // Second call should be a no-op (idempotent)
+      expect(() => loadSkills(dir)).not.toThrow();
+      const tool2 = defaultRegistry.get('Skill');
+      expect(tool2).toBe(tool1); // same instance
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('sorts skill names deterministically', () => {
+    const dir = createTempDir();
+    try {
+      writeSkillFile(dir, 'c.md', 'c-skill', 'Third');
+      writeSkillFile(dir, 'a.md', 'a-skill', 'First');
+      writeSkillFile(dir, 'b.md', 'b-skill', 'Second');
+
+      loadSkills(dir);
+
+      const tool = defaultRegistry.get('Skill');
+      expect(tool).toBeDefined();
+      // Enum should be sorted alphabetically by name
+      expect(tool!.parameters.properties.name.enum).toEqual(['a-skill', 'b-skill', 'c-skill']);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -144,15 +233,11 @@ describe('Skill tool handler', () => {
   });
 
   afterEach(() => {
-    try {
-      defaultRegistry.remove('Skill');
-    } catch {
-      // ignore
-    }
+    try { defaultRegistry.remove('Skill'); } catch { /* ignore */ }
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('returns skill file content on success', async () => {
+  it('returns skill file content on success (from cache, no disk I/O)', async () => {
     const tool = defaultRegistry.get('Skill')!;
     const result = await tool.handler({ name: 'test-skill' });
 
@@ -161,6 +246,17 @@ describe('Skill tool handler', () => {
     expect(result.content).toContain('Do X then Y.');
     expect(result.content).toContain('---');
     expect(result.summary).toBe('已激活技能: test-skill');
+  });
+
+  it('returns cached content even when file was deleted after scan', async () => {
+    const tool = defaultRegistry.get('Skill')!;
+    // Delete the file — handler should still return cached content
+    fs.rmSync(dir, { recursive: true, force: true });
+
+    const result = await tool.handler({ name: 'test-skill' });
+    expect(result.exitCode).toBe(0);
+    expect(result.content).toContain('# Test');
+    expect(result.content).toContain('Do X then Y.');
   });
 
   it('returns error for unknown skill name', async () => {
@@ -173,14 +269,25 @@ describe('Skill tool handler', () => {
     expect(result.content).toContain('test-skill'); // lists available skills
   });
 
-  it('returns error when file was deleted after scan', async () => {
-    const tool = defaultRegistry.get('Skill')!;
-    // Delete the file but keep the registered tool
-    fs.rmSync(dir, { recursive: true, force: true });
+  it('handles quoted skill name correctly', async () => {
+    // Use a fresh custom registry to avoid clash with beforeEach's registration
+    const customRegistry = createRegistry();
+    const dir2 = createTempDir();
+    try {
+      writeSkillFile(dir2, 'q.md', '"my-quoted-skill"', 'A skill with quoted name', '# Quoted\n\nContent.');
+      loadSkills(dir2, customRegistry);
 
-    const result = await tool.handler({ name: 'test-skill' });
-    expect(result.isError).toBe(true);
-    expect(result.exitCode).toBe(1);
-    expect(result.content).toContain('读取技能文件失败');
+      const tool = customRegistry.get('Skill')!;
+      expect(tool).toBeDefined();
+      // Name was stripped of quotes, so enum uses unquoted name
+      expect(tool!.parameters.properties.name.enum).toEqual(['my-quoted-skill']);
+
+      // Calling with unquoted name works
+      const result = await tool.handler({ name: 'my-quoted-skill' });
+      expect(result.exitCode).toBe(0);
+      expect(result.content).toContain('# Quoted');
+    } finally {
+      fs.rmSync(dir2, { recursive: true, force: true });
+    }
   });
 });
