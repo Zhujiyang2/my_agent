@@ -45,7 +45,7 @@ describe('loadConfig', () => {
         max_inbox_size: 50,
       },
       memory: {
-        enabled: false,
+        enabled: true,
         user_budget: 4000,
         agent_budget: 2000,
         compress_threshold: 5,

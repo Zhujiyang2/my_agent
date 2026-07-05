@@ -73,7 +73,7 @@ export function loadConfig(filePath?: string): Config {
         typeof subagentCfg.max_inbox_size === 'number' ? subagentCfg.max_inbox_size : 50,
     },
     memory: {
-      enabled: typeof memoryCfg.enabled === 'boolean' ? memoryCfg.enabled : false,
+      enabled: typeof memoryCfg.enabled === 'boolean' ? memoryCfg.enabled : true,
       user_budget: typeof memoryCfg.user_budget === 'number' ? memoryCfg.user_budget : 4000,
       agent_budget: typeof memoryCfg.agent_budget === 'number' ? memoryCfg.agent_budget : 2000,
       compress_threshold: typeof memoryCfg.compress_threshold === 'number' ? memoryCfg.compress_threshold : 5,
