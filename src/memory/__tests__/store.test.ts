@@ -146,6 +146,28 @@ describe('createMemoryStore', () => {
     expect(index).toContain('beta');
   });
 
+  // ── updateAccessedAt ──
+
+  it('updates accessed_at without touching body content', () => {
+    store.write(makeFile({ body: 'secret body content.' }));
+    store.updateAccessedAt('test-memory', '2026-07-05T10:00:00Z');
+
+    const file = store.read('test-memory');
+    expect(file).not.toBeNull();
+    expect(file!.metadata.accessed_at).toBe('2026-07-05T10:00:00Z');
+    expect(file!.body).toContain('secret body content.');
+  });
+
+  it('updateAccessedAt keeps encoded content intact', () => {
+    // Write a file with content that looks like an encoded marker
+    store.write(makeFile({ name: 'encoded-mem', body: 'Ref: {enc:abc123} is encoded.' }));
+    store.updateAccessedAt('encoded-mem', '2026-01-01T00:00:00Z');
+
+    const file = store.read('encoded-mem');
+    expect(file!.metadata.accessed_at).toBe('2026-01-01T00:00:00Z');
+    expect(file!.body).toContain('{enc:abc123}');
+  });
+
   // ── name validation ──
 
   it('rejects invalid names', () => {

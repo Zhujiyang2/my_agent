@@ -9,6 +9,7 @@ export interface MemoryStore {
   read(name: string): MemoryFile | null;
   delete(name: string): boolean;
   list(): string[];
+  updateAccessedAt(name: string, timestamp: string): void;
 }
 
 export function createMemoryStore(memoryDir: string): MemoryStore {
@@ -166,5 +167,19 @@ export function createMemoryStore(memoryDir: string): MemoryStore {
     }
   }
 
-  return { write, read, delete: deleteFile, list };
+  function updateAccessedAt(name: string, timestamp: string): void {
+    validateName(name);
+    const fp = filePath(name);
+    if (!fs.existsSync(fp)) return;
+
+    // Read raw file, replace only the accessed_at line
+    const raw = fs.readFileSync(fp, 'utf-8');
+    const updated = raw.replace(
+      /^(\s+accessed_at: ).*$/m,
+      `$1${timestamp}`,
+    );
+    fs.writeFileSync(fp, updated, 'utf-8');
+  }
+
+  return { write, read, delete: deleteFile, list, updateAccessedAt };
 }

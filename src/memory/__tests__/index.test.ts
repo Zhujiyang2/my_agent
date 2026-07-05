@@ -138,4 +138,37 @@ describe('createMemoryManager', () => {
     const result = mgr.assemble();
     expect(result).toContain('192.168.1.100');
   });
+
+  it('updates accessed_at on assemble so LRU tracks usage', async () => {
+    await mgr.remember({
+      name: 'frequent',
+      description: 'Frequently used memory',
+      content: 'Server at 192.168.1.100 — used in every session.',
+      type: 'agent',
+    });
+
+    // Read the current accessed_at
+    const filePath = path.join(TEST_DIR, 'frequent.md');
+    const before = fs.readFileSync(filePath, 'utf-8');
+    const beforeMatch = before.match(/accessed_at: (.+)/);
+    const beforeTime = beforeMatch ? beforeMatch[1] : '';
+
+    // Wait so timestamps differ
+    await new Promise(r => setTimeout(r, 10));
+
+    // Call assemble — this should update accessed_at
+    mgr.assemble();
+
+    const after = fs.readFileSync(filePath, 'utf-8');
+    const afterMatch = after.match(/accessed_at: (.+)/);
+    const afterTime = afterMatch ? afterMatch[1] : '';
+
+    // accessed_at must be bumped
+    expect(afterTime).not.toBe(beforeTime);
+    expect(new Date(afterTime).getTime()).toBeGreaterThan(new Date(beforeTime).getTime());
+
+    // Body on disk must still be encoded (not leaked plaintext)
+    expect(after).not.toContain('192.168.1.100');
+    expect(after).toMatch(/\{enc:/);
+  });
 });

@@ -38,12 +38,15 @@ export function createMemoryManager(config: MemoryConfig): MemoryManager {
     }
 
     const files: MemoryFile[] = [];
+    const now = new Date().toISOString();
     for (const name of names) {
       const file = store.read(name);
       if (file) {
         // Decode reversible encodings so Agent sees real values
         file.body = decode(file.body);
         file.description = decode(file.description);
+        // Update access time on disk (for LRU), touch only the frontmatter
+        store.updateAccessedAt(name, now);
         files.push(file);
       }
     }
