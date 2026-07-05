@@ -24,8 +24,11 @@ export function assembleMemory(
     const result = buildSection('User Memories', userFiles, config.user_budget, estimateTokens);
     if (result) {
       sections.push(result.content);
-      if (result.skipped > 0) {
-        sections.push(`⚠️ ${result.skipped} older user memories skipped — token budget nearly full (${result.usagePercent}% used). Please remind the user to review and clean up their memories at ~/.my_agent/memory/.`);
+      if (result.usagePercent >= 90 || result.skipped > 0) {
+        const skippedMsg = result.skipped > 0
+          ? `${result.skipped} older user memories skipped, `
+          : '';
+        sections.push(`⚠️ ${skippedMsg}user memory budget ${result.usagePercent}% used (${result.usagePercent >= 100 ? 'over' : 'near'} limit). Please remind the user to review and clean up their memories at ~/.my_agent/memory/.`);
       }
     }
   }

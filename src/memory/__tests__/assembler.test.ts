@@ -92,7 +92,7 @@ describe('assembleMemory', () => {
     expect(result).toContain('## Agent Memories');
   });
 
-  it('adds warning when user memories are skipped due to budget', () => {
+  it('adds warning when user memory budget >= 90%', () => {
     const files: MemoryFile[] = [];
     for (let i = 0; i < 5; i++) {
       files.push(makeFile({
@@ -102,9 +102,9 @@ describe('assembleMemory', () => {
         body: 'x'.repeat(2000),
       }));
     }
-    const result = assembleMemory(files, { user_budget: 1200, agent_budget: 2000 }, estimateTokens);
+    const result = assembleMemory(files, { user_budget: 550, agent_budget: 2000 }, estimateTokens);
     expect(result).not.toBeNull();
     expect(result).toContain('⚠️');
-    expect(result).toContain('skipped');
+    expect(result).toContain('user memory budget');
   });
 });
