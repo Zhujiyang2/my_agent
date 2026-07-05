@@ -172,6 +172,30 @@ describe('createMemoryManager', () => {
     expect(after).toMatch(/\{enc:/);
   });
 
+  it('skips accessed_at update when within 60s cooldown', async () => {
+    await mgr.remember({
+      name: 'cooldown-test',
+      description: 'Cooldown',
+      content: 'Test.',
+      type: 'agent',
+    });
+
+    const filePath = path.join(TEST_DIR, 'agent', 'cooldown-test.md');
+
+    // First assemble — should update
+    mgr.assemble();
+    const after1 = fs.readFileSync(filePath, 'utf-8');
+    const time1 = after1.match(/accessed_at: (.+)/)?.[1] ?? '';
+
+    // Second assemble immediately — should NOT update (cooldown)
+    await new Promise(r => setTimeout(r, 5));
+    mgr.assemble();
+    const after2 = fs.readFileSync(filePath, 'utf-8');
+    const time2 = after2.match(/accessed_at: (.+)/)?.[1] ?? '';
+
+    expect(time2).toBe(time1); // unchanged — cooldown active
+  });
+
   it('stores user and agent memories in separate subdirectories', async () => {
     await mgr.remember({
       name: 'user-mem', description: 'User', content: 'User content.', type: 'user',

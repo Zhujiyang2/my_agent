@@ -31,6 +31,7 @@ export function createMemoryManager(config: MemoryConfig): MemoryManager {
   const storeUser: MemoryStore = createMemoryStore(path.join(config.memoryDir, 'user'));
   const storeAgent: MemoryStore = createMemoryStore(path.join(config.memoryDir, 'agent'));
   let lastUserWarnings: string[] = [];
+  let lastAccessUpdate = 0; // cooldown for accessed_at writes (ms)
 
   function storeFor(type: 'user' | 'agent'): MemoryStore {
     return type === 'user' ? storeUser : storeAgent;
@@ -45,6 +46,10 @@ export function createMemoryManager(config: MemoryConfig): MemoryManager {
 
     const files: MemoryFile[] = [];
     const now = new Date().toISOString();
+    const nowMs = Date.now();
+    const shouldUpdateAccess = nowMs - lastAccessUpdate > 60_000; // cooldown: 60s
+    if (shouldUpdateAccess) lastAccessUpdate = nowMs;
+
     for (const name of names) {
       // Try both stores (names are unique across user/agent dirs)
       const file = storeUser.read(name) ?? storeAgent.read(name);
@@ -52,8 +57,10 @@ export function createMemoryManager(config: MemoryConfig): MemoryManager {
         // Decode reversible encodings so Agent sees real values
         file.body = decode(file.body);
         file.description = decode(file.description);
-        // Update access time on disk (for LRU), touch only the frontmatter
-        storeFor(file.metadata.type).updateAccessedAt(name, now);
+        // Update access time on disk (for LRU), with cooldown to reduce I/O
+        if (shouldUpdateAccess) {
+          storeFor(file.metadata.type).updateAccessedAt(name, now);
+        }
         files.push(file);
       }
     }
