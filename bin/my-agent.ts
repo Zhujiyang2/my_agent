@@ -11,12 +11,12 @@ import readline from 'node:readline';
 import { loadConfig } from '../src/config/loader';
 import { createAgent } from '../src/agent/loop';
 import {
-  isExitCommand,
   formatWelcome,
   formatError,
   formatInfo,
   formatToolCall,
 } from '../src/cli/chat';
+import { createCommandRegistry } from '../src/cli/commands/index.js';
 
 // Load tools — side-effect imports trigger registration into defaultRegistry
 import '../src/tools/shell/index.js';
@@ -48,7 +48,7 @@ async function main(): Promise<void> {
   console.log(formatWelcome());
   console.log(formatInfo(`  Model: ${config.model}`));
   console.log(formatInfo(`  API: ${config.api_url}`));
-  console.log(formatInfo('  /exit to quit | Ctrl+C to interrupt | Ctrl+C twice to exit'));
+  console.log(formatInfo('  /exit to quit | Ctrl+C to interrupt'));
   console.log('');
 
   const agent = createAgent(config, {
@@ -65,6 +65,8 @@ async function main(): Promise<void> {
   });
 
   rl.prompt();
+
+  const commandRegistry = createCommandRegistry();
 
   let currentController: AbortController | null = null;
   let confirming = false;
@@ -106,20 +108,12 @@ async function main(): Promise<void> {
       currentController.abort();
       currentController = null;
       console.log(formatInfo('\n  Interrupted'));
-      rl.prompt();
-    } else {
-      console.log(formatInfo('\n  Goodbye!'));
-      process.exit(0);
     }
+    rl.prompt();
   });
 
   rl.on('line', async (line: string) => {
     if (confirming) return;
-    if (isExitCommand(line)) {
-      console.log(formatInfo('  Goodbye!\n'));
-      rl.close();
-      return;
-    }
 
     const input = line.trim();
     if (!input) {
@@ -127,6 +121,44 @@ async function main(): Promise<void> {
       return;
     }
 
+    // Check if input is a slash command
+    if (input.startsWith('/')) {
+      const resolved = commandRegistry.resolve(input);
+
+      if (resolved) {
+        const ctx = {
+          agent,
+          output: {
+            info: (text: string) => console.log(formatInfo(`  ${text}`)),
+            error: (text: string) => console.log(formatError(`  ${text}`)),
+          },
+          ui: {
+            prompt: (text: string) =>
+              new Promise<string>((resolve) => {
+                rl.question(text, resolve);
+              }),
+          },
+        };
+
+        const result = await resolved.command.execute(ctx, input);
+
+        if (result.type === 'exit') {
+          console.log(formatInfo('  Goodbye!\n'));
+          rl.close();
+          return;
+        }
+
+        rl.prompt();
+        return;
+      }
+
+      // Unknown command
+      console.log(formatError(`  Unknown command. Type /help for available commands.`));
+      rl.prompt();
+      return;
+    }
+
+    // Not a slash command — send to agent
     currentController = new AbortController();
 
     try {

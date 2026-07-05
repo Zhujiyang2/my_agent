@@ -23,6 +23,8 @@ export function createMessageInjector(
     getState: base.getState.bind(base),
     truncateTo: base.truncateTo.bind(base),
     cancelAll: base.cancelAll.bind(base),
+    clear: base.clear.bind(base),
+    getFlowEntries: base.getFlowEntries.bind(base),
 
     assemble(): ReturnType<ContextManager['assemble']> {
       const messages = base.assemble();
