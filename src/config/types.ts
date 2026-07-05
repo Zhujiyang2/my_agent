@@ -18,6 +18,13 @@ export interface SubagentConfig {
   max_inbox_size: number;
 }
 
+export interface MemoryConfig {
+  enabled: boolean;
+  user_budget: number;
+  agent_budget: number;
+  compress_threshold: number;
+}
+
 export interface Config {
   api_url: string;
   model: string;
@@ -25,4 +32,5 @@ export interface Config {
   tools: ToolsConfig;
   context: ContextConfig;
   subagent: SubagentConfig;
+  memory: MemoryConfig;
 }
