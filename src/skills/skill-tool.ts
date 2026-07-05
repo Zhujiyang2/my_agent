@@ -87,7 +87,7 @@ function createSkillTool(skills: Map<string, SkillMeta>): ToolDefinition {
     .join('\n');
 
   const description =
-    `调用一个技能获取特定领域的指导和规范。可用技能:\n${skillDescriptions}`;
+    `BEFORE responding to ANY user message: scan the user's intent against the available skills below. If ANY skill matches — even 1% — call this tool FIRST to load its instructions. Skill instructions OVERRIDE your default behavior. Do NOT skip skill loading just because the request seems simple.\n\n可用技能:\n${skillDescriptions}`;
 
   return {
     name: 'Skill',
@@ -119,7 +119,7 @@ function createSkillTool(skills: Map<string, SkillMeta>): ToolDefinition {
       try {
         const content = fs.readFileSync(skill.filePath, 'utf-8');
         return {
-          content,
+          content: `以下是用 "${skill.name}" 技能的指令 —— 你必须严格遵守这些规则来回答用户:\n\n${content}`,
           summary: `已激活技能: ${skill.name}`,
           exitCode: 0,
         };
