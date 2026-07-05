@@ -6,6 +6,7 @@
 // Bootstrap proxy support (via global-agent) — set GLOBAL_AGENT_HTTP_PROXY env var to activate
 import 'global-agent/bootstrap';
 
+import path from 'node:path';
 import readline from 'node:readline';
 import { loadConfig } from '../src/config/loader';
 import { createAgent } from '../src/agent/loop';
@@ -21,6 +22,7 @@ import {
 import '../src/tools/shell/index.js';
 import '../src/tools/files/index.js';
 import '../src/tools/subagent/index.js';
+import { loadSkills } from '../src/skills/skill-tool.js';
 import { setExecutorCallbacks } from '../src/tools/executor.js';
 import { promptConfirm } from '../src/cli/chat.js';
 import { SubagentManager, setSubagentManager } from '../src/agent/subagent/manager.js';
@@ -88,6 +90,9 @@ async function main(): Promise<void> {
   mcpManager.initialize(mcpConfig);
   setMCPManager(mcpManager);
 
+  // Load skills from project directory
+  loadSkills(path.join(process.cwd(), '.my-agent', 'skills'));
+
   // Set up safety confirmation — must be after rl creation
   setExecutorCallbacks({
     onConfirm: async (command: string, category: string) => {
@@ -148,4 +153,7 @@ async function main(): Promise<void> {
   });
 }
 
-main();
+main().catch((err) => {
+  console.error(formatError(`  Fatal: ${err instanceof Error ? err.message : String(err)}`));
+  process.exit(1);
+});
