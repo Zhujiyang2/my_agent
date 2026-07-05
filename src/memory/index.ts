@@ -2,7 +2,7 @@
 import { estimateTokens } from '../context/token-counter';
 import type { Message } from '../llm/types';
 import { createMemoryStore, type MemoryStore } from './store';
-import { sanitize } from './sanitizer';
+import { encode, decode } from './sanitizer';
 import { evictAgent } from './evictor';
 import { assembleMemory } from './assembler';
 import type { MemoryConfig, MemoryEntry, MemoryFile } from './types';
@@ -40,7 +40,12 @@ export function createMemoryManager(config: MemoryConfig): MemoryManager {
     const files: MemoryFile[] = [];
     for (const name of names) {
       const file = store.read(name);
-      if (file) files.push(file);
+      if (file) {
+        // Decode reversible encodings so Agent sees real values
+        file.body = decode(file.body);
+        file.description = decode(file.description);
+        files.push(file);
+      }
     }
 
     if (files.length === 0) {
@@ -67,8 +72,8 @@ export function createMemoryManager(config: MemoryConfig): MemoryManager {
   }
 
   async function remember(entry: MemoryEntry): Promise<{ warnings: string[] }> {
-    const sanitizeResult = sanitize(entry.content, entry.description);
-    if (sanitizeResult.isEmpty) {
+    const encodeResult = encode(entry.content, entry.description);
+    if (encodeResult.isEmpty) {
       throw new Error(
         'Memory content is empty after sanitization. Please rephrase without sensitive information.',
       );
@@ -90,7 +95,7 @@ export function createMemoryManager(config: MemoryConfig): MemoryManager {
         accessed_at: accessedAt,
         compressed: false,
       },
-      body: sanitizeResult.content,
+      body: encodeResult.content,
     };
 
     store.write(file);
@@ -106,7 +111,7 @@ export function createMemoryManager(config: MemoryConfig): MemoryManager {
       }
     }
 
-    return { warnings: sanitizeResult.warnings };
+    return { warnings: encodeResult.warnings };
   }
 
   async function forget(name: string): Promise<void> {

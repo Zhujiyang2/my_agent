@@ -101,16 +101,41 @@ describe('createMemoryManager', () => {
     expect(result).toBeNull();
   });
 
-  it('sanitizes sensitive content before saving', async () => {
+  it('encodes sensitive content on disk, decodes for Agent on assemble', async () => {
     await mgr.remember({
       name: 'test',
       description: 'Test',
-      content: 'My password=secret123 should be redacted.',
+      content: 'My password=secret123 is on disk encoded.',
       type: 'user',
     });
 
+    // File on disk should NOT contain the plaintext secret
+    const filePath = path.join(TEST_DIR, 'test.md');
+    const diskContent = fs.readFileSync(filePath, 'utf-8');
+    expect(diskContent).not.toContain('secret123');
+    expect(diskContent).toMatch(/\{enc:/);
+
+    // Assemble output (Agent sees) SHOULD have the decoded real value
     const result = mgr.assemble();
-    expect(result).not.toContain('secret123');
-    expect(result).toContain('[REDACTED]');
+    expect(result).toContain('password=secret123');
+  });
+
+  it('encodes IP addresses on disk, decodes for Agent', async () => {
+    await mgr.remember({
+      name: 'server',
+      description: 'Server info',
+      content: 'Server at 192.168.1.100 is the main host.',
+      type: 'user',
+    });
+
+    // Disk: encoded
+    const filePath = path.join(TEST_DIR, 'server.md');
+    const diskContent = fs.readFileSync(filePath, 'utf-8');
+    expect(diskContent).not.toContain('192.168.1.100');
+    expect(diskContent).toMatch(/\{enc:/);
+
+    // Agent sees decoded IP
+    const result = mgr.assemble();
+    expect(result).toContain('192.168.1.100');
   });
 });

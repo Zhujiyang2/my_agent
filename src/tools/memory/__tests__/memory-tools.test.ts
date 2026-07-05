@@ -79,7 +79,7 @@ describe('remember tool', () => {
     expect(result.content).toContain('type');
   });
 
-  it('warns when content was sanitized', async () => {
+  it('warns when content was encoded', async () => {
     const tool = createRememberTool(mm);
     const result = await tool.handler({
       name: 'test',
@@ -88,7 +88,7 @@ describe('remember tool', () => {
       type: 'user',
     });
 
-    expect(result.content).toContain('sanitized');
+    expect(result.content).toContain('encoded');
   });
 });
 

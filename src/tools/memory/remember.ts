@@ -61,8 +61,8 @@ export function createRememberTool(mm: MemoryManager): ToolDefinition {
 
         if (warnings.length > 0) {
           return {
-            content: `Memory "${name}" saved with sanitization warnings:\n${warnings.join('\n')}\n\nPlease consider rephrasing to avoid sensitive data.`,
-            summary: `remembered ${name} (sanitized)`,
+            content: `Memory "${name}" saved with encoding warnings:\n${warnings.join('\n')}\n\nSensitive values (IPs, credentials) are reversibly encoded on disk. PII (names, phones, emails) is redacted.`,
+            summary: `remembered ${name} (encoded)`,
             exitCode: 0,
           };
         }
