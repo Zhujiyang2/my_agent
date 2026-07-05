@@ -9,7 +9,6 @@ const MAX_DESCRIPTION_LENGTH = 3000;
 interface SkillMeta {
   name: string;
   description: string;
-  filePath: string;
   content: string; // cached to avoid double-read
 }
 
@@ -41,7 +40,7 @@ function parseFrontmatter(filePath: string): SkillMeta | null {
 
     const desc = stripQuotes(descMatch[1].trim());
 
-    return { name, description: desc, filePath, content };
+    return { name, description: desc, content };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(`[skills] I/O error reading ${filePath}: ${msg}`);
@@ -103,8 +102,8 @@ function createSkillTool(skills: Map<string, SkillMeta>): ToolDefinition {
 
   // Truncate if too long to avoid exceeding LLM API tool description limits
   if (skillDescriptions.length > MAX_DESCRIPTION_LENGTH) {
-    skillDescriptions = skillDescriptions.slice(0, MAX_DESCRIPTION_LENGTH - 30)
-      + '\n... (truncated, too many skills)';
+    const suffix = '\n... (truncated, too many skills)';
+    skillDescriptions = [...skillDescriptions].slice(0, MAX_DESCRIPTION_LENGTH - suffix.length).join('') + suffix;
   }
 
   const description =
