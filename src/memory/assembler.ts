@@ -25,7 +25,7 @@ export function assembleMemory(
     if (result) {
       sections.push(result.content);
       if (result.skipped > 0) {
-        sections.push(`⚠️ ${result.skipped} older user memories skipped — token budget nearly full (${result.usagePercent}% used). Consider removing outdated memories with the forget tool.`);
+        sections.push(`⚠️ ${result.skipped} older user memories skipped — token budget nearly full (${result.usagePercent}% used). Please remind the user to review and clean up their memories at ~/.my_agent/memory/.`);
       }
     }
   }
