@@ -24,6 +24,14 @@ export interface AgentOptions {
 export interface AgentSession {
     send(input: string, signal?: AbortSignal): Promise<string>;
     readonly history: ReadonlyArray<Message>;
+    /** Reset conversation context (for /clear). */
+    clearContext(): void;
+    /** Manually trigger compaction (for /compact). */
+    compactContext(): void;
+    /** Read-only view of flow entries (for /rewind). */
+    getContextFlow(): ReadonlyArray<{ message: Message; round: number; pinned: boolean }>;
+    /** Truncate context to first N messages (for /rewind rollback). */
+    truncateContextTo(count: number): void;
 }
 
 function toolsToOpenAI(
@@ -241,6 +249,18 @@ export function createAgent(config: Config, options: AgentOptions = {}): AgentSe
         send,
         get history() {
             return [...contextManager.assemble()];
+        },
+        clearContext() {
+            contextManager.clear();
+        },
+        compactContext() {
+            contextManager.compact();
+        },
+        getContextFlow() {
+            return contextManager.getFlowEntries();
+        },
+        truncateContextTo(count: number) {
+            contextManager.truncateTo(count);
         },
     };
 }
