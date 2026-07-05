@@ -91,4 +91,20 @@ describe('assembleMemory', () => {
     expect(result).not.toContain('## User Memories');
     expect(result).toContain('## Agent Memories');
   });
+
+  it('adds warning when user memories are skipped due to budget', () => {
+    const files: MemoryFile[] = [];
+    for (let i = 0; i < 5; i++) {
+      files.push(makeFile({
+        name: `user-${i}`,
+        description: `Memory ${i}`,
+        metadata: { type: 'user', accessed_at: `2026-07-0${i + 1}T00:00:00Z`, compressed: false },
+        body: 'x'.repeat(2000),
+      }));
+    }
+    const result = assembleMemory(files, { user_budget: 1200, agent_budget: 2000 }, estimateTokens);
+    expect(result).not.toBeNull();
+    expect(result).toContain('⚠️');
+    expect(result).toContain('skipped');
+  });
 });

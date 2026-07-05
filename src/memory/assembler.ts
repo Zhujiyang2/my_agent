@@ -21,13 +21,18 @@ export function assembleMemory(
   const sections: string[] = [];
 
   if (config.user_budget > 0 && userFiles.length > 0) {
-    const userSection = buildSection('User Memories', userFiles, config.user_budget, estimateTokens);
-    if (userSection) sections.push(userSection);
+    const result = buildSection('User Memories', userFiles, config.user_budget, estimateTokens);
+    if (result) {
+      sections.push(result.content);
+      if (result.skipped > 0) {
+        sections.push(`⚠️ ${result.skipped} older user memories skipped — token budget nearly full (${result.usagePercent}% used). Consider removing outdated memories with the forget tool.`);
+      }
+    }
   }
 
   if (config.agent_budget > 0 && agentFiles.length > 0) {
-    const agentSection = buildSection('Agent Memories', agentFiles, config.agent_budget, estimateTokens);
-    if (agentSection) sections.push(agentSection);
+    const result = buildSection('Agent Memories', agentFiles, config.agent_budget, estimateTokens);
+    if (result) sections.push(result.content);
   }
 
   if (sections.length === 0) return null;
@@ -35,12 +40,18 @@ export function assembleMemory(
   return sections.join('\n\n');
 }
 
+interface SectionResult {
+  content: string;
+  skipped: number;
+  usagePercent: number;
+}
+
 function buildSection(
   title: string,
   files: MemoryFile[],
   budget: number,
   estimateTokens: TokenEstimator,
-): string | null {
+): SectionResult | null {
   const sorted = [...files].sort(
     (a, b) => new Date(b.metadata.accessed_at).getTime() - new Date(a.metadata.accessed_at).getTime(),
   );
@@ -49,6 +60,7 @@ function buildSection(
   let currentTokens = 0;
   const header = `## ${title}`;
   currentTokens += estimateTokens(header);
+  let skipped = 0;
 
   for (const file of sorted) {
     const prefix = file.metadata.compressed ? '[compressed] ' : '';
@@ -56,6 +68,7 @@ function buildSection(
     const entryTokens = estimateTokens(entry);
 
     if (currentTokens + entryTokens > budget) {
+      skipped++;
       continue;
     }
 
@@ -65,5 +78,7 @@ function buildSection(
 
   if (lines.length === 0) return null;
 
-  return `${header}\n${lines.join('\n')}`;
+  const usagePercent = Math.round((currentTokens / budget) * 100);
+
+  return { content: `${header}\n${lines.join('\n')}`, skipped, usagePercent };
 }
