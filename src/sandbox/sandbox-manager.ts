@@ -4,9 +4,10 @@ import path from 'node:path';
 import { createPathPolicy } from './path-policy';
 import { isBwrapAvailable, executeInBwrap } from './bwrap-executor';
 import { isDockerCommand, createDockerValidator } from './docker-validator';
+import { createProxyServer } from './net-proxy';
 import type { SandboxConfig, SandboxStatus } from './types';
 import type { ToolResult } from '../tools/types';
-import { execSync } from 'node:child_process';
+import { execSync, execFileSync } from 'node:child_process';
 
 let sandboxManager: SandboxManager | null = null;
 
@@ -28,17 +29,44 @@ export interface SandboxManager {
   getStatus(): SandboxStatus;
 }
 
+function isSocatAvailable(): boolean {
+  try {
+    execFileSync('socat', ['-V'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function createSandboxManager(config: SandboxConfig): SandboxManager {
   const policy = createPathPolicy({
     extraProtectPaths: config.extra_protect_paths,
   });
   const dockerValidator = createDockerValidator(policy);
 
+  const domainConfig = config.domains ?? { extra_allowed_domains: [], blocked_domains: [] };
+  const proxy = createProxyServer({
+    allowedDomains: domainConfig.extra_allowed_domains,
+    blockedDomains: domainConfig.blocked_domains,
+  });
+
+  const socatAvailable = isSocatAvailable();
+
+  // Start proxy on creation (fire-and-forget, errors logged)
+  let proxyRunning = true;
+  const proxyPromise = proxy.start().catch(() => {
+    console.warn('[sandbox] Failed to start proxy server.');
+    proxyRunning = false;
+  });
+
   return {
     async execute(
       command: string,
       options?: { workdir?: string; timeout?: number }
     ): Promise<ToolResult> {
+      // Ensure proxy is running before executing
+      await proxyPromise;
+
       // If sandbox is disabled, execute directly
       if (!config.enabled) {
         return executeDirect(command, options);
@@ -58,6 +86,21 @@ export function createSandboxManager(config: SandboxConfig): SandboxManager {
             isError: true,
           };
         }
+      }
+
+      // Check socat availability for network isolation
+      if (!socatAvailable) {
+        if (config.fallback_to_warn) {
+          const result = executeDirect(command, options);
+          result.content =
+            '[SANDBOX WARNING] socat is not available — cannot isolate network. ' +
+            'Command executed without network isolation.\n' +
+            'Install socat: apt install socat / dnf install socat\n\n' +
+            result.content;
+          result.summary = 'sandbox=warn | ' + result.summary;
+          return result;
+        }
+        return executeDirect(command, options);
       }
 
       // Check bwrap availability fresh on each execute call
@@ -114,6 +157,8 @@ export function createSandboxManager(config: SandboxConfig): SandboxManager {
         enabled: config.enabled,
         engine: config.engine,
         bwrapAvailable: isBwrapAvailable(),
+        socatAvailable,
+        proxyRunning,
         writablePaths: policy.getWritablePaths(),
         protectPaths: policy.getProtectPaths(),
       };

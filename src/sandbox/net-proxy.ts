@@ -180,13 +180,21 @@ export function createProxyServer(config: ProxyConfig) {
 
   return {
     async start(): Promise<void> {
-      return new Promise((resolve) => {
+      return new Promise((resolve, reject) => {
         server = net.createServer(handleConnection);
 
+        server.on('error', reject);
+
         if (tcpPort !== undefined) {
-          server.listen(tcpPort, '127.0.0.1', () => resolve());
+          server.listen(tcpPort, '127.0.0.1', () => {
+            server?.removeListener('error', reject);
+            resolve();
+          });
         } else {
-          server.listen(socketPath, () => resolve());
+          server.listen(socketPath, () => {
+            server?.removeListener('error', reject);
+            resolve();
+          });
         }
       });
     },

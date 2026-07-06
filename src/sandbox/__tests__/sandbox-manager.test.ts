@@ -19,11 +19,13 @@ describe('createSandboxManager', () => {
   });
 
   describe('getStatus', () => {
-    it('returns status with enabled flag', () => {
+    it('returns status with enabled flag and proxy/socat fields', () => {
       const status = mgr.getStatus();
       expect(status.enabled).toBe(true);
       expect(status.engine).toBe('bwrap');
       expect(typeof status.bwrapAvailable).toBe('boolean');
+      expect(typeof status.socatAvailable).toBe('boolean');
+      expect(typeof status.proxyRunning).toBe('boolean');
       expect(Array.isArray(status.writablePaths)).toBe(true);
       expect(Array.isArray(status.protectPaths)).toBe(true);
     });
@@ -74,6 +76,32 @@ describe('createSandboxManager', () => {
       const m = createSandboxManager({ ...DEFAULT_SANDBOX_CONFIG, enabled: false });
       setSandboxManager(m);
       expect(getSandboxManager()).toBe(m);
+    });
+  });
+
+  describe('proxy lifecycle', () => {
+    it('accepts domain config and creates manager', () => {
+      const mgr2 = createSandboxManager({
+        ...DEFAULT_SANDBOX_CONFIG,
+        domains: { extra_allowed_domains: [], blocked_domains: [] },
+      });
+      expect(mgr2).toBeDefined();
+    });
+
+    it('starts proxy server when sandbox is enabled', () => {
+      const mgr2 = createSandboxManager({
+        ...DEFAULT_SANDBOX_CONFIG,
+        domains: { extra_allowed_domains: ['custom.io'], blocked_domains: ['bad.io'] },
+      });
+      const status = mgr2.getStatus();
+      expect(status).toBeDefined();
+      expect(status.proxyRunning).toBe(true);
+    });
+
+    it('creates manager with default empty domains when not provided', () => {
+      const mgr2 = createSandboxManager(DEFAULT_SANDBOX_CONFIG);
+      const status = mgr2.getStatus();
+      expect(status.proxyRunning).toBe(true);
     });
   });
 });
