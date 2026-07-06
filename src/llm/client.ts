@@ -56,10 +56,14 @@ export async function chatStream(
   const toolCallMap = new Map<number, ToolCall>();
 
   let streamDone = false;
+  let chunks = 0;
+  let totalBytes = 0;
   while (true) {
     const { done, value } = await reader.read();
-    if (done) break;
+    if (done) { process.stderr.write(`[api] reader done, chunks=${chunks} totalBytes=${totalBytes}\n`); break; }
 
+    chunks++;
+    totalBytes += value.length;
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split('\n');
     buffer = lines.pop() ?? '';
