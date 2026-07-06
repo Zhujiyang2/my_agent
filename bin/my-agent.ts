@@ -18,6 +18,7 @@ import {
   formatToolCall,
 } from '../src/cli/chat';
 import { createCommandRegistry } from '../src/cli/commands/index.js';
+import { dispatch } from '../src/cli/commands/dispatcher.js';
 
 // Load tools — side-effect imports trigger registration into defaultRegistry
 import '../src/tools/shell/index.js';
@@ -125,49 +126,40 @@ async function main(): Promise<void> {
       return;
     }
 
-    // Check if input is a slash command
-    if (input.startsWith('/')) {
-      const resolved = commandRegistry.resolve(input);
+    // Build command context (shared for all commands)
+    const cmdCtx = {
+      agent,
+      contextManager,
+      output: {
+        info: (text: string) => console.log(formatInfo(`  ${text}`)),
+        error: (text: string) => console.log(formatError(`  ${text}`)),
+      },
+      ui: {
+        prompt: (text: string) =>
+          new Promise<string>((resolve) => {
+            rl.question(text, resolve);
+          }),
+      },
+    };
 
-      if (resolved) {
-        const ctx = {
-          agent,
-          contextManager,
-          output: {
-            info: (text: string) => console.log(formatInfo(`  ${text}`)),
-            error: (text: string) => console.log(formatError(`  ${text}`)),
-          },
-          ui: {
-            prompt: (text: string) =>
-              new Promise<string>((resolve) => {
-                rl.question(text, resolve);
-              }),
-          },
-        };
+    const result = await dispatch(input, commandRegistry, cmdCtx);
 
-        const result = await resolved.command.execute(ctx, input);
+    if (result.action === 'exit') {
+      console.log(formatInfo('  Goodbye!\n'));
+      rl.close();
+      return;
+    }
 
-        if (result.type === 'exit') {
-          console.log(formatInfo('  Goodbye!\n'));
-          rl.close();
-          return;
-        }
-
-        rl.prompt();
-        return;
-      }
-
-      // Unknown command
-      console.log(formatError(`  Unknown command. Type /help for available commands.`));
+    if (result.action === 'continue') {
       rl.prompt();
       return;
     }
 
-    // Not a slash command — send to agent
+    // action === 'send_to_agent'
     currentController = new AbortController();
 
     try {
-      await agent.send(input, currentController.signal);
+      await agent.send(result.input, currentController.signal);
       console.log('\n');
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === 'AbortError') {
