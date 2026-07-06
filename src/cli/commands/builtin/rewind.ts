@@ -85,7 +85,7 @@ export const rewindCommand: Command = {
         }
 
         ctx.contextManager.truncateTo(targetTurn.endIndex + 1);
-        ctx.output.info(`Rewound to turn ${targetRound}.`);
+        ctx.output.info(`Rewound to turn ${targetRound}: "${targetTurn.userPreview}"`);
         return { type: 'handled' };
     },
 };
