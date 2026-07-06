@@ -134,6 +134,7 @@ async function main(): Promise<void> {
     const cmdCtx = {
       agent,
       contextManager: agent.contextManager,
+      config,
       output: {
         info: (text: string) => console.log(formatInfo(`  ${text}`)),
         error: (text: string) => console.log(formatError(`  ${text}`)),

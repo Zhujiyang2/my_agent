@@ -8,6 +8,8 @@ import { defaultRegistry } from '../tools/registry';
 import { createContextManager } from '../context/manager';
 import type { ContextManager } from '../context/types';
 import { createManageContextTool } from '../tools/context/manage-context';
+import { estimateTokens } from '../context/token-counter';
+import { llmCompact } from '../context/llm-compact';
 import { createMemoryManager } from '../memory/index';
 import { createRememberTool } from '../tools/memory/remember';
 import { createForgetTool } from '../tools/memory/forget';
@@ -223,8 +225,18 @@ export function createAgent(config: Config, options: AgentOptions = {}): AgentSe
                     }
                 }
 
-                // Compact after each round of tool calls
+                // Rule-based compact after each round of tool calls
                 contextManager.compact();
+
+                // If still over budget, use LLM-based full compression
+                const maxTokens = config.context.max_context_tokens > 0
+                    ? config.context.max_context_tokens
+                    : 102400;
+                const assembled = contextManager.assemble();
+                if (estimateTokens(assembled, config.model) > maxTokens) {
+                    const summary = await llmCompact(config, assembled);
+                    contextManager.llmCompact(summary);
+                }
             }
 
             const lastTool = lastResult?.toolCalls[lastResult.toolCalls.length - 1];

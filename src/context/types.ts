@@ -13,6 +13,9 @@ export interface ContextManager {
     /** Explicit compaction: apply age-based summarization, dedup, and budget enforcement. */
     compact(): void;
 
+    /** Replace flow with an LLM-generated compressed summary (used by /compact). */
+    llmCompact(summary: string): void;
+
     /** Pin message at flow index — it will never be compacted. */
     pin(index: number): void;
 

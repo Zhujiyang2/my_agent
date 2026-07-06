@@ -388,6 +388,39 @@ describe('createContextManager', () => {
     it('getFlowEntries returns empty array when flow is empty', () => {
         expect(cm.getFlowEntries()).toEqual([]);
     });
+
+    // === llmCompact ===
+
+    it('llmCompact replaces flow with a compressed system message', () => {
+        cm.append(userMsg('hello'));
+        cm.append(assistantMsg('hi'));
+        cm.append(userMsg('do something'));
+        cm.append(assistantMsg('done'));
+
+        cm.llmCompact('User asked to do something, assistant completed it.');
+
+        const messages = cm.assemble();
+        expect(messages).toHaveLength(1);
+        expect(messages[0].role).toBe('system');
+        expect(messages[0].content).toContain('[Compressed context]');
+        expect(messages[0].content).toContain('User asked to do something');
+    });
+
+    it('llmCompact still allows new messages to be appended', () => {
+        cm.append(userMsg('old'));
+        cm.llmCompact('summary');
+
+        cm.append(userMsg('new question'));
+        cm.append(assistantMsg('new answer'));
+
+        const messages = cm.assemble();
+        expect(messages).toHaveLength(3);
+        expect(messages[0].role).toBe('system');  // compressed summary
+        expect(messages[1].role).toBe('user');
+        expect(messages[1].content).toBe('new question');
+        expect(messages[2].role).toBe('assistant');
+        expect(messages[2].content).toBe('new answer');
+    });
 });
 
 describe('createContextManager with MemoryManager', () => {

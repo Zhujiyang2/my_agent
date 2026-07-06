@@ -8,6 +8,49 @@ export interface StreamResult {
   toolCalls: ToolCall[];
 }
 
+export interface ChatResult {
+  content: string;
+}
+
+/**
+ * Non-streaming chat completion — used for one-shot requests like compaction.
+ * Returns the full response content as a string.
+ */
+export async function chat(
+  config: Config,
+  messages: Message[],
+  signal?: AbortSignal,
+): Promise<string> {
+  const url = `${config.api_url}/chat/completions`;
+
+  const body: Record<string, unknown> = {
+    model: config.model,
+    messages,
+    stream: false,
+  };
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.api_key}`,
+    },
+    body: JSON.stringify(body),
+    signal,
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text().catch(() => '<unreadable>');
+    throw new Error(`API request failed (${response.status}): ${errorBody}`);
+  }
+
+  const data = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+
+  return data.choices?.[0]?.message?.content ?? '';
+}
+
 export async function chatStream(
   config: Config,
   messages: Message[],

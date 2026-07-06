@@ -202,10 +202,21 @@ export function createContextManager(config: ContextConfig, model = 'gpt-4o', me
         cancelled = true;
     }
 
+    function llmCompact(summary: string): void {
+        // Replace entire flow with a single system message containing the compressed summary
+        flow.length = 0;
+        flow.push({
+            message: { role: 'system', content: `[Compressed context]\n\n${summary}` },
+            round: 0,
+            pinned: false,
+        });
+    }
+
     return {
         append,
         assemble,
         compact,
+        llmCompact,
         pin,
         unpin,
         findByToolCallId,
