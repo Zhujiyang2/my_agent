@@ -8,10 +8,20 @@ function mockContext(overrides?: Partial<CommandContext>): CommandContext {
         agent: {
             async send() { return ''; },
             get history(): Message[] { return []; },
-            clearContext() {},
-            compactContext() {},
-            getContextFlow() { return []; },
-            truncateContextTo() {},
+        },
+        contextManager: {
+            append() {},
+            assemble() { return []; },
+            compact() {},
+            pin() {},
+            unpin() {},
+            findByToolCallId() { return undefined; },
+            setState() {},
+            getState() { return {}; },
+            truncateTo() {},
+            cancelAll() {},
+            clear() {},
+            getFlowEntries() { return []; },
         },
         output: {
             info() {},
@@ -25,17 +35,17 @@ function mockContext(overrides?: Partial<CommandContext>): CommandContext {
 }
 
 describe('/clear', () => {
-    it('calls agent.clearContext()', async () => {
-        const clearContext = vi.fn();
+    it('calls contextManager.clear()', async () => {
+        const clear = vi.fn();
         const ctx = mockContext({
-            agent: {
-                ...mockContext().agent,
-                clearContext,
+            contextManager: {
+                ...mockContext().contextManager,
+                clear,
             },
         });
 
         await clearCommand.execute(ctx, '/clear');
-        expect(clearContext).toHaveBeenCalledOnce();
+        expect(clear).toHaveBeenCalledOnce();
     });
 
     it('returns handled result', async () => {

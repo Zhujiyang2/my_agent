@@ -23,10 +23,6 @@ function makeMockAgent(finalText: string, history?: Message[]) {
   return {
     send: vi.fn().mockResolvedValue(finalText),
     history: history ?? [],
-    clearContext: vi.fn(),
-    compactContext: vi.fn(),
-    getContextFlow: vi.fn().mockReturnValue([]),
-    truncateContextTo: vi.fn(),
   };
 }
 
@@ -34,10 +30,6 @@ function makeNeverResolvingAgent() {
   return {
     send: vi.fn().mockImplementation(() => new Promise(() => {})),
     history: [],
-    clearContext: vi.fn(),
-    compactContext: vi.fn(),
-    getContextFlow: vi.fn().mockReturnValue([]),
-    truncateContextTo: vi.fn(),
   };
 }
 

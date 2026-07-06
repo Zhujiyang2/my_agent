@@ -47,7 +47,7 @@ export const rewindCommand: Command = {
     description: 'Rewind conversation to a previous turn',
     usage: '/rewind',
     async execute(ctx, _rawInput) {
-        const entries = ctx.agent.getContextFlow();
+        const entries = ctx.contextManager.getFlowEntries();
         const turns = buildTurns(entries);
 
         if (turns.length === 0) {
@@ -84,7 +84,7 @@ export const rewindCommand: Command = {
             return { type: 'handled' };
         }
 
-        ctx.agent.truncateContextTo(targetTurn.endIndex + 1);
+        ctx.contextManager.truncateTo(targetTurn.endIndex + 1);
         ctx.output.info(`Rewound to turn ${targetRound}.`);
         return { type: 'handled' };
     },

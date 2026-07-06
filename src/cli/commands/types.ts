@@ -1,8 +1,10 @@
 // src/cli/commands/types.ts
 import type { AgentSession } from '../../agent/loop.js';
+import type { ContextManager } from '../../context/types.js';
 
 export interface CommandContext {
     agent: AgentSession;
+    contextManager: ContextManager;
     output: {
         info(text: string): void;
         error(text: string): void;

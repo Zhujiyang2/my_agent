@@ -36,10 +36,6 @@ function mockAgent(finalText: string, history?: Message[]) {
   return {
     send: vi.fn().mockResolvedValue(finalText),
     history: history ?? [],
-    clearContext: vi.fn(),
-    compactContext: vi.fn(),
-    getContextFlow: vi.fn().mockReturnValue([]),
-    truncateContextTo: vi.fn(),
   };
 }
 
@@ -47,10 +43,6 @@ function neverResolvingAgent() {
   return {
     send: vi.fn().mockImplementation(() => new Promise(() => {})),
     history: [],
-    clearContext: vi.fn(),
-    compactContext: vi.fn(),
-    getContextFlow: vi.fn().mockReturnValue([]),
-    truncateContextTo: vi.fn(),
   };
 }
 
@@ -58,10 +50,6 @@ function failingAgent(errorMsg: string) {
   return {
     send: vi.fn().mockRejectedValue(new Error(errorMsg)),
     history: [],
-    clearContext: vi.fn(),
-    compactContext: vi.fn(),
-    getContextFlow: vi.fn().mockReturnValue([]),
-    truncateContextTo: vi.fn(),
   };
 }
 

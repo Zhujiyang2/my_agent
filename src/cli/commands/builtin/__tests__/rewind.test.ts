@@ -68,10 +68,20 @@ describe('/rewind', () => {
             agent: {
                 async send() { return ''; },
                 get history(): Message[] { return []; },
-                clearContext() {},
-                compactContext() {},
-                getContextFlow() { return []; },
-                truncateContextTo() {},
+            },
+            contextManager: {
+                append() {},
+                assemble() { return []; },
+                compact() {},
+                pin() {},
+                unpin() {},
+                findByToolCallId() { return undefined; },
+                setState() {},
+                getState() { return {}; },
+                truncateTo() {},
+                cancelAll() {},
+                clear() {},
+                getFlowEntries() { return []; },
             },
             output: {
                 info() {},
@@ -87,9 +97,9 @@ describe('/rewind', () => {
     it('shows error when no conversation to rewind', async () => {
         const error = vi.fn();
         const ctx = mockContext({
-            agent: {
-                ...mockContext().agent,
-                getContextFlow() { return []; },
+            contextManager: {
+                ...mockContext().contextManager,
+                getFlowEntries() { return []; },
             },
             output: { error, info: vi.fn() },
         });
@@ -98,7 +108,7 @@ describe('/rewind', () => {
         expect(error).toHaveBeenCalledWith('No conversation to rewind.');
     });
 
-    it('rewinds to selected turn via truncateContextTo', async () => {
+    it('rewinds to selected turn via truncateTo', async () => {
         const entries: FlowEntry[] = [
             entry('user', 'turn 1', 1),
             entry('assistant', 'resp 1', 1),
@@ -108,12 +118,12 @@ describe('/rewind', () => {
             entry('assistant', 'resp 3', 3),
         ];
 
-        const truncateContextTo = vi.fn();
+        const truncateTo = vi.fn();
         const ctx = mockContext({
-            agent: {
-                ...mockContext().agent,
-                getContextFlow() { return entries; },
-                truncateContextTo,
+            contextManager: {
+                ...mockContext().contextManager,
+                getFlowEntries() { return entries; },
+                truncateTo,
             },
             ui: {
                 async prompt() { return '2'; },
@@ -127,7 +137,7 @@ describe('/rewind', () => {
         await rewindCommand.execute(ctx, '/rewind');
 
         // Turn 2: startIndex=2, endIndex=3. truncate to endIndex+1 = 4
-        expect(truncateContextTo).toHaveBeenCalledWith(4);
+        expect(truncateTo).toHaveBeenCalledWith(4);
     });
 
     it('shows error for invalid turn number', async () => {
@@ -137,9 +147,9 @@ describe('/rewind', () => {
 
         const error = vi.fn();
         const ctx = mockContext({
-            agent: {
-                ...mockContext().agent,
-                getContextFlow() { return entries; },
+            contextManager: {
+                ...mockContext().contextManager,
+                getFlowEntries() { return entries; },
             },
             ui: {
                 async prompt() { return '99'; },
@@ -158,9 +168,9 @@ describe('/rewind', () => {
 
         const error = vi.fn();
         const ctx = mockContext({
-            agent: {
-                ...mockContext().agent,
-                getContextFlow() { return entries; },
+            contextManager: {
+                ...mockContext().contextManager,
+                getFlowEntries() { return entries; },
             },
             ui: {
                 async prompt() { return 'abc'; },

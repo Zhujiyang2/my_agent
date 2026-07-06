@@ -4,7 +4,7 @@ export const compactCommand: Command = {
     name: 'compact',
     description: 'Manually trigger context compaction',
     async execute(ctx) {
-        ctx.agent.compactContext();
+        ctx.contextManager.compact();
         ctx.output.info('Context compacted.');
         return { type: 'handled' };
     },

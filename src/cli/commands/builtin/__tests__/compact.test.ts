@@ -8,10 +8,20 @@ function mockContext(overrides?: Partial<CommandContext>): CommandContext {
         agent: {
             async send() { return ''; },
             get history(): Message[] { return []; },
-            clearContext() {},
-            compactContext() {},
-            getContextFlow() { return []; },
-            truncateContextTo() {},
+        },
+        contextManager: {
+            append() {},
+            assemble() { return []; },
+            compact() {},
+            pin() {},
+            unpin() {},
+            findByToolCallId() { return undefined; },
+            setState() {},
+            getState() { return {}; },
+            truncateTo() {},
+            cancelAll() {},
+            clear() {},
+            getFlowEntries() { return []; },
         },
         output: {
             info() {},
@@ -25,17 +35,17 @@ function mockContext(overrides?: Partial<CommandContext>): CommandContext {
 }
 
 describe('/compact', () => {
-    it('calls agent.compactContext()', async () => {
-        const compactContext = vi.fn();
+    it('calls contextManager.compact()', async () => {
+        const compact = vi.fn();
         const ctx = mockContext({
-            agent: {
-                ...mockContext().agent,
-                compactContext,
+            contextManager: {
+                ...mockContext().contextManager,
+                compact,
             },
         });
 
         await compactCommand.execute(ctx, '/compact');
-        expect(compactContext).toHaveBeenCalledOnce();
+        expect(compact).toHaveBeenCalledOnce();
     });
 
     it('returns handled result', async () => {

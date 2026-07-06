@@ -10,6 +10,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { loadConfig } from '../src/config/loader';
 import { createAgent } from '../src/agent/loop';
+import { createContextManager } from '../src/context/manager';
 import {
   formatWelcome,
   formatError,
@@ -51,11 +52,14 @@ async function main(): Promise<void> {
   console.log(formatInfo('  /exit to quit | Ctrl+C to interrupt'));
   console.log('');
 
+  const contextManager = createContextManager(config.context, config.model);
+
   const agent = createAgent(config, {
     onToken: (token) => process.stdout.write(token),
     onToolCall: (name, args) => {
       console.log(formatToolCall(name, args));
     },
+    contextManager,
   });
 
   const rl = readline.createInterface({
@@ -128,6 +132,7 @@ async function main(): Promise<void> {
       if (resolved) {
         const ctx = {
           agent,
+          contextManager,
           output: {
             info: (text: string) => console.log(formatInfo(`  ${text}`)),
             error: (text: string) => console.log(formatError(`  ${text}`)),
