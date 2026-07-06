@@ -85,11 +85,12 @@ describe('buildBwrapCommand', () => {
     expect(joined).toContain('--bind /dev/shm /dev/shm');
   });
 
-  it('includes --unshare-pid and --share-net', () => {
+  it('includes --unshare-pid and --unshare-net', () => {
     const cmd = buildBwrapCommand('echo hello', policy);
     const joined = cmd.join(' ');
     expect(joined).toContain('--unshare-pid');
-    expect(joined).toContain('--share-net');
+    expect(joined).toContain('--unshare-net');
+    expect(joined).not.toContain('--share-net');
   });
 
   it('includes --bind for registered writable paths', () => {
@@ -109,18 +110,25 @@ describe('buildBwrapCommand', () => {
     }
   });
 
-  it('ends with -- followed by the target command', () => {
+  it('ends with -- followed by sh -c wrapper script', () => {
     const cmd = buildBwrapCommand('echo hello world', policy);
     const afterDash = cmd.slice(cmd.indexOf('--') + 1);
-    expect(afterDash.join(' ')).toBe('echo hello world');
+    // All commands are wrapped via sh -c with socat forwarder
+    expect(afterDash[0]).toBe('sh');
+    expect(afterDash[1]).toBe('-c');
+    // The wrapper script should contain the original command
+    const wrapperScript = afterDash[2];
+    expect(wrapperScript).toContain('echo hello world');
   });
 
   it('wraps command in shell when shell wrapper is needed', () => {
     const cmd = buildBwrapCommand('echo "hello world"', policy);
     const afterDash = cmd.slice(cmd.indexOf('--') + 1);
-    // Complex commands with quotes should be wrapped in sh -c
+    // All commands (including complex ones) are wrapped in sh -c with socat
     expect(afterDash[0]).toBe('sh');
     expect(afterDash[1]).toBe('-c');
+    const wrapperScript = afterDash[2];
+    expect(wrapperScript).toContain('echo "hello world"');
   });
 
   it('adds --bind for fixed resolv.conf when host uses systemd-resolved', () => {
@@ -153,5 +161,40 @@ describe('buildBwrapCommand', () => {
     } finally {
       try { fs.unlinkSync(tmpResolv); } catch {}
     }
+  });
+
+  it('includes proxy socket bind-mount', () => {
+    const cmd = buildBwrapCommand('echo hello', policy);
+    const joined = cmd.join(' ');
+    expect(joined).toContain('--bind /tmp/my-agent-proxy.sock /tmp/my-agent-proxy.sock');
+  });
+
+  it('wraps all commands with socat forwarder script', () => {
+    const cmd = buildBwrapCommand('npm install express', policy);
+    const afterDash = cmd.slice(cmd.indexOf('--') + 1);
+    expect(afterDash[0]).toBe('sh');
+    expect(afterDash[1]).toBe('-c');
+    const wrapper = afterDash[2];
+    expect(wrapper).toContain('socat TCP-LISTEN:19877');
+    expect(wrapper).toContain('UNIX-CONNECT:/tmp/my-agent-proxy.sock');
+    expect(wrapper).toContain('npm install express');
+  });
+
+  it('injects proxy environment variables', () => {
+    const cmd = buildBwrapCommand('echo hello', policy);
+    const afterDash = cmd.slice(cmd.indexOf('--') + 1);
+    const wrapper = afterDash[2];
+    expect(wrapper).toContain('HTTP_PROXY=http://127.0.0.1:19877');
+    expect(wrapper).toContain('HTTPS_PROXY=http://127.0.0.1:19877');
+    expect(wrapper).toContain('http_proxy=http://127.0.0.1:19877');
+    expect(wrapper).toContain('https_proxy=http://127.0.0.1:19877');
+  });
+
+  it('wrapper script includes cleanup trap', () => {
+    const cmd = buildBwrapCommand('echo hello', policy);
+    const afterDash = cmd.slice(cmd.indexOf('--') + 1);
+    const wrapper = afterDash[2];
+    expect(wrapper).toContain('trap cleanup EXIT INT TERM');
+    expect(wrapper).toContain('SOCAT_PID=$!');
   });
 });

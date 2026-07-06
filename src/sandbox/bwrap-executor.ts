@@ -105,27 +105,38 @@ function buildBwrapCommand(
   // Fix DNS for systemd-resolved (127.0.0.53 unreachable in new netns)
   const resolvConfFix = fixResolvConf(options?.resolvConfPath);
 
-  // Process isolation, share network
+  // Process isolation, isolate network (no --share-net)
   args.push('--unshare-pid');
-  args.push('--share-net');
+  args.push('--unshare-net');
 
   // Override resolv.conf if DNS fix was applied
   if (resolvConfFix) {
     args.push('--bind', resolvConfFix, '/etc/resolv.conf');
   }
 
+  // Bind the proxy Unix socket into the sandbox
+  args.push('--bind', '/tmp/my-agent-proxy.sock', '/tmp/my-agent-proxy.sock');
+
   // Separator and target command
   args.push('--');
 
-  // Determine if shell wrapping is needed
-  const needsShell = /["'|&;<>$`\\*?[\]()!#~]/.test(command);
-  if (needsShell) {
-    args.push('sh', '-c', command);
-  } else {
-    // Split simple command into argv
-    const parts = command.match(/(?:[^\s"]+|"[^"]*")+/g) ?? [command];
-    args.push(...parts.map((p) => p.replace(/^"|"$/g, '')));
-  }
+  // All commands are wrapped with socat forwarder + proxy env vars
+  const wrapperScript =
+    'cleanup() { kill $SOCAT_PID 2>/dev/null; }; ' +
+    'trap cleanup EXIT INT TERM; ' +
+    'socat TCP-LISTEN:19877,fork,reuseaddr UNIX-CONNECT:/tmp/my-agent-proxy.sock & ' +
+    'SOCAT_PID=$!; ' +
+    'sleep 0.1; ' +
+    'export HTTP_PROXY=http://127.0.0.1:19877; ' +
+    'export HTTPS_PROXY=http://127.0.0.1:19877; ' +
+    'export http_proxy=http://127.0.0.1:19877; ' +
+    'export https_proxy=http://127.0.0.1:19877; ' +
+    command + '; ' +
+    'EXIT_CODE=$?; ' +
+    'cleanup; ' +
+    'exit $EXIT_CODE';
+
+  args.push('sh', '-c', wrapperScript);
 
   return args;
 }
