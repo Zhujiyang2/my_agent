@@ -37,6 +37,11 @@ export function createContextManager(config: ContextConfig, model = 'gpt-4o', me
     function assemble(): Message[] {
         const result: Message[] = [];
 
+        // Layer -1: System identity (from config, survives /clear)
+        if (config.systemPrompt) {
+            result.push({ role: 'system', content: config.systemPrompt });
+        }
+
         // Layer 0: Memory
         const memSystemMsg = memoryManager?.assemble();
         if (memSystemMsg) {
@@ -176,20 +181,50 @@ export function createContextManager(config: ContextConfig, model = 'gpt-4o', me
         }
     }
 
+    function clear(): void {
+        flow.length = 0;
+        for (const key of Object.keys(state)) {
+            delete state[key];
+        }
+        currentRound = 0;
+        cancelled = false;
+    }
+
+    function getFlowEntries(): ReadonlyArray<{
+        message: Message;
+        round: number;
+        pinned: boolean;
+    }> {
+        return [...flow];
+    }
+
     function cancelAll(): void {
         cancelled = true;
+    }
+
+    function llmCompact(summary: string): void {
+        // Replace entire flow with a single system message containing the compressed summary
+        flow.length = 0;
+        flow.push({
+            message: { role: 'system', content: `[Compressed context]\n\n${summary}` },
+            round: 0,
+            pinned: false,
+        });
     }
 
     return {
         append,
         assemble,
         compact,
+        llmCompact,
         pin,
         unpin,
         findByToolCallId,
         setState,
         getState,
         truncateTo,
+        clear,
+        getFlowEntries,
         cancelAll,
     };
 }

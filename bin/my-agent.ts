@@ -11,12 +11,13 @@ import readline from 'node:readline';
 import { loadConfig } from '../src/config/loader';
 import { createAgent } from '../src/agent/loop';
 import {
-  isExitCommand,
   formatWelcome,
   formatError,
   formatInfo,
   formatToolCall,
 } from '../src/cli/chat';
+import { createCommandRegistry } from '../src/cli/commands/index.js';
+import { dispatch } from '../src/cli/commands/dispatcher.js';
 
 // Load tools — side-effect imports trigger registration into defaultRegistry
 import '../src/tools/shell/index.js';
@@ -48,8 +49,16 @@ async function main(): Promise<void> {
   console.log(formatWelcome());
   console.log(formatInfo(`  Model: ${config.model}`));
   console.log(formatInfo(`  API: ${config.api_url}`));
-  console.log(formatInfo('  /exit to quit | Ctrl+C to interrupt | Ctrl+C twice to exit'));
+  console.log(formatInfo('  /exit to quit | Ctrl+C to interrupt'));
   console.log('');
+
+  // Inject default system prompt if not configured
+  if (!config.context.systemPrompt) {
+    config.context.systemPrompt =
+      'You are My Agent, an AI-powered coding assistant running in the terminal. ' +
+      'You have access to tools for reading/writing files, running shell commands, ' +
+      'spawning subagents, and more. Use your tools to help the user accomplish their tasks.';
+  }
 
   const agent = createAgent(config, {
     onToken: (token) => process.stdout.write(token),
@@ -65,6 +74,8 @@ async function main(): Promise<void> {
   });
 
   rl.prompt();
+
+  const commandRegistry = createCommandRegistry();
 
   let currentController: AbortController | null = null;
   let confirming = false;
@@ -106,20 +117,12 @@ async function main(): Promise<void> {
       currentController.abort();
       currentController = null;
       console.log(formatInfo('\n  Interrupted'));
-      rl.prompt();
-    } else {
-      console.log(formatInfo('\n  Goodbye!'));
-      process.exit(0);
     }
+    rl.prompt();
   });
 
   rl.on('line', async (line: string) => {
     if (confirming) return;
-    if (isExitCommand(line)) {
-      console.log(formatInfo('  Goodbye!\n'));
-      rl.close();
-      return;
-    }
 
     const input = line.trim();
     if (!input) {
@@ -127,10 +130,44 @@ async function main(): Promise<void> {
       return;
     }
 
+    // Build command context (shared for all commands)
+    const cmdCtx = {
+      agent,
+      contextManager: agent.contextManager,
+      config,
+      output: {
+        info: (text: string) => console.log(formatInfo(`  ${text}`)),
+        error: (text: string) => console.log(formatError(`  ${text}`)),
+      },
+      ui: {
+        prompt: (text: string) =>
+          new Promise<string>((resolve) => {
+            rl.question(text, resolve);
+          }),
+        write: (text: string) => {
+          rl.write(text);
+        },
+      },
+    };
+
+    const result = await dispatch(input, commandRegistry, cmdCtx);
+
+    if (result.action === 'exit') {
+      console.log(formatInfo('  Goodbye!\n'));
+      rl.close();
+      return;
+    }
+
+    if (result.action === 'continue') {
+      rl.prompt();
+      return;
+    }
+
+    // action === 'send_to_agent'
     currentController = new AbortController();
 
     try {
-      await agent.send(input, currentController.signal);
+      await agent.send(result.input, currentController.signal);
       console.log('\n');
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === 'AbortError') {

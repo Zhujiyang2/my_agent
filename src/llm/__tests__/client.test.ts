@@ -1,6 +1,6 @@
 // src/llm/__tests__/client.test.ts
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { chatStream } from '../client';
+import { chatStream, chat } from '../client';
 import type { Config } from '../../config/types';
 import type { Message } from '../types';
 
@@ -183,5 +183,57 @@ describe('chatStream', () => {
     const result = await chatStream(TEST_CONFIG, TEST_MESSAGES, undefined, () => {});
     expect(result.toolCalls).toEqual([]);
     expect(result.content).toBe('Hello');
+  });
+});
+
+describe('chat', () => {
+  let originalFetch: typeof global.fetch;
+
+  beforeEach(() => {
+    originalFetch = global.fetch;
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('sends non-streaming POST and returns content', async () => {
+    const responseBody = JSON.stringify({
+      choices: [{ message: { content: 'compressed result' }, finish_reason: 'stop' }],
+    });
+
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(responseBody, { status: 200 })
+    );
+    global.fetch = fetchMock;
+
+    const messages: Message[] = [{ role: 'user', content: 'summarize please' }];
+    const result = await chat(TEST_CONFIG, messages);
+
+    const callUrl = fetchMock.mock.calls[0][0];
+    const callOptions = fetchMock.mock.calls[0][1];
+
+    expect(callUrl).toBe('https://api.example.com/v1/chat/completions');
+    expect(callOptions.method).toBe('POST');
+    expect(callOptions.headers['Content-Type']).toBe('application/json');
+    expect(callOptions.headers['Authorization']).toBe('Bearer sk-test');
+
+    const body = JSON.parse(callOptions.body);
+    expect(body.model).toBe('test-model');
+    expect(body.messages).toEqual(messages);
+    expect(body.stream).toBe(false);
+
+    expect(result).toBe('compressed result');
+  });
+
+  it('throws on non-2xx response', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response('{"error":"Server Error"}', { status: 500 })
+    );
+    global.fetch = fetchMock;
+
+    await expect(
+      chat(TEST_CONFIG, [{ role: 'user', content: 'hi' }])
+    ).rejects.toThrow(/500/);
   });
 });

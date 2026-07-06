@@ -13,6 +13,9 @@ export interface ContextManager {
     /** Explicit compaction: apply age-based summarization, dedup, and budget enforcement. */
     compact(): void;
 
+    /** Replace flow with an LLM-generated compressed summary (used by /compact). */
+    llmCompact(summary: string): void;
+
     /** Pin message at flow index — it will never be compacted. */
     pin(index: number): void;
 
@@ -30,6 +33,16 @@ export interface ContextManager {
 
     /** Remove all messages after the first `count` messages (for error rollback). */
     truncateTo(count: number): void;
+
+    /** Reset flow, state, round counter, and cancelled flag. Memory layer is preserved. */
+    clear(): void;
+
+    /** Read-only view of flow entries. */
+    getFlowEntries(): ReadonlyArray<{
+        message: Message;
+        round: number;
+        pinned: boolean;
+    }>;
 
     /** Cancel pending work (for Ctrl+C). */
     cancelAll(): void;

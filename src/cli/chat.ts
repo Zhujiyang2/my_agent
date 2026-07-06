@@ -5,13 +5,6 @@ export const WELCOME_ART = [
   '  └──────────┘',
 ].join('\n');
 
-const EXIT_COMMANDS = new Set(['/exit', '/quit', '/q']);
-
-export function isExitCommand(input: string): boolean {
-  const trimmed = input.trim().toLowerCase();
-  return EXIT_COMMANDS.has(trimmed);
-}
-
 export function formatWelcome(): string {
   return [
     '\x1b[32m',

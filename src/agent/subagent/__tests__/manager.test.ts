@@ -23,6 +23,7 @@ function makeMockAgent(finalText: string, history?: Message[]) {
   return {
     send: vi.fn().mockResolvedValue(finalText),
     history: history ?? [],
+    contextManager: {} as any,
   };
 }
 
@@ -30,6 +31,7 @@ function makeNeverResolvingAgent() {
   return {
     send: vi.fn().mockImplementation(() => new Promise(() => {})),
     history: [],
+    contextManager: {} as any,
   };
 }
 

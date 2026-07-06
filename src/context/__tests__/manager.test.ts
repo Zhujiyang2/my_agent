@@ -332,6 +332,95 @@ describe('createContextManager', () => {
         cm.truncateTo(5);
         expect(cm.assemble()).toHaveLength(1);
     });
+
+    // === clear ===
+
+    it('clear resets flow and state', () => {
+        cm.append(userMsg('hello'));
+        cm.append(assistantMsg('hi'));
+        cm.setState('key', 'value');
+        cm.clear();
+
+        expect(cm.assemble()).toHaveLength(0);
+        expect(cm.getState()).toEqual({});
+    });
+
+    it('clear preserves system prompt from config', () => {
+        const cmWithPrompt = createContextManager({
+            ...CONTEXT_CONFIG,
+            systemPrompt: 'You are a helpful assistant.',
+        });
+        cmWithPrompt.append(userMsg('hello'));
+        cmWithPrompt.append(assistantMsg('hi'));
+        cmWithPrompt.clear();
+
+        const messages = cmWithPrompt.assemble();
+        expect(messages).toHaveLength(1);
+        expect(messages[0].role).toBe('system');
+        expect(messages[0].content).toBe('You are a helpful assistant.');
+    });
+
+    it('clear resets round counter', () => {
+        cm.append(userMsg('q1'));  // round 1
+        cm.append(assistantMsg('a1'));
+        cm.append(userMsg('q2'));  // round 2
+        cm.clear();
+        cm.append(userMsg('after clear'));
+
+        const entries = cm.getFlowEntries();
+        expect(entries[0].round).toBe(1);
+    });
+
+    // === getFlowEntries ===
+
+    it('getFlowEntries returns all flow entries with metadata', () => {
+        cm.append(userMsg('hello'));
+        cm.append(assistantMsg('hi'));
+
+        const entries = cm.getFlowEntries();
+        expect(entries).toHaveLength(2);
+        expect(entries[0].message.role).toBe('user');
+        expect(entries[0].round).toBe(1);
+        expect(entries[0].pinned).toBe(false);
+        expect(entries[1].message.role).toBe('assistant');
+    });
+
+    it('getFlowEntries returns empty array when flow is empty', () => {
+        expect(cm.getFlowEntries()).toEqual([]);
+    });
+
+    // === llmCompact ===
+
+    it('llmCompact replaces flow with a compressed system message', () => {
+        cm.append(userMsg('hello'));
+        cm.append(assistantMsg('hi'));
+        cm.append(userMsg('do something'));
+        cm.append(assistantMsg('done'));
+
+        cm.llmCompact('User asked to do something, assistant completed it.');
+
+        const messages = cm.assemble();
+        expect(messages).toHaveLength(1);
+        expect(messages[0].role).toBe('system');
+        expect(messages[0].content).toContain('[Compressed context]');
+        expect(messages[0].content).toContain('User asked to do something');
+    });
+
+    it('llmCompact still allows new messages to be appended', () => {
+        cm.append(userMsg('old'));
+        cm.llmCompact('summary');
+
+        cm.append(userMsg('new question'));
+        cm.append(assistantMsg('new answer'));
+
+        const messages = cm.assemble();
+        expect(messages).toHaveLength(3);
+        expect(messages[0].role).toBe('system');  // compressed summary
+        expect(messages[1].role).toBe('user');
+        expect(messages[1].content).toBe('new question');
+        expect(messages[2].role).toBe('assistant');
+        expect(messages[2].content).toBe('new answer');
+    });
 });
 
 describe('createContextManager with MemoryManager', () => {
