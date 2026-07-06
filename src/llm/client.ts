@@ -26,8 +26,6 @@ export async function chatStream(
     body.tools = tools;
   }
 
-  process.stderr.write(`[api] POST ${url} msgs=${messages.length} tools=${tools?.length ?? 0}\n`);
-
   const response = await fetch(url, {
     method: 'POST',
     headers: {
@@ -37,8 +35,6 @@ export async function chatStream(
     body: JSON.stringify(body),
     signal,
   });
-
-  process.stderr.write(`[api] status=${response.status}\n`);
 
   if (!response.ok) {
     const errorBody = await response.text().catch(() => '<unreadable>');
@@ -56,14 +52,10 @@ export async function chatStream(
   const toolCallMap = new Map<number, ToolCall>();
 
   let streamDone = false;
-  let chunks = 0;
-  let totalBytes = 0;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
 
-    chunks++;
-    totalBytes += value.length;
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split('\n');
     buffer = lines.pop() ?? '';
@@ -125,6 +117,5 @@ export async function chatStream(
     .sort(([a], [b]) => a - b)
     .map(([, tc]) => tc);
 
-  process.stderr.write(`[api] result content_len=${content.length} tool_calls=${toolCalls.length} finish=${finishReason} chunks=${chunks} bytes=${totalBytes}\n`);
   return { finishReason, content, toolCalls };
 }

@@ -98,6 +98,11 @@ export function createAgent(config: Config, options: AgentOptions = {}): AgentSe
                 lastResult = result;
 
                 if (result.toolCalls.length === 0) {
+                    // Retry on empty response (DeepSeek occasionally returns empty on first request)
+                    if (!result.content) {
+                        continue;
+                    }
+
                     contextManager.append({ role: 'assistant', content: result.content });
 
                     // Surface user-facing memory warnings
