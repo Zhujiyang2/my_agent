@@ -1,0 +1,231 @@
+// src/sandbox/__tests__/bwrap-executor.test.ts
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { buildBwrapCommand, isBwrapAvailable, findBwrap, fixResolvConf } from '../bwrap-executor';
+import { createPathPolicy } from '../path-policy';
+import path from 'node:path';
+import fs from 'node:fs';
+import os from 'node:os';
+
+describe('findBwrap', () => {
+  it('returns a string path or null', () => {
+    const result = findBwrap();
+    expect(result === null || typeof result === 'string').toBe(true);
+  });
+});
+
+describe('isBwrapAvailable', () => {
+  it('returns a boolean', () => {
+    expect(typeof isBwrapAvailable()).toBe('boolean');
+  });
+});
+
+describe('fixResolvConf', () => {
+  const tmpResolv = path.join(os.tmpdir(), `test-resolv-${Date.now()}.conf`);
+
+  afterEach(() => {
+    try { fs.unlinkSync(tmpResolv); } catch {}
+    try { fs.unlinkSync('/tmp/my-agent-resolv.conf'); } catch {}
+  });
+
+  it('returns null when resolv.conf has external nameserver', () => {
+    fs.writeFileSync(tmpResolv, 'nameserver 8.8.8.8\n');
+    const result = fixResolvConf(tmpResolv);
+    expect(result).toBeNull();
+  });
+
+  it('returns a path when resolv.conf has localhost nameserver (127.0.0.53)', () => {
+    fs.writeFileSync(tmpResolv, 'nameserver 127.0.0.53\n');
+    const result = fixResolvConf(tmpResolv);
+    // Should return a path to a fixed resolv.conf
+    expect(result).not.toBeNull();
+    expect(fs.existsSync(result!)).toBe(true);
+    const content = fs.readFileSync(result!, 'utf-8');
+    expect(content).toContain('nameserver');
+  });
+
+  it('returns null for non-existent file', () => {
+    const result = fixResolvConf('/nonexistent/resolv.conf');
+    expect(result).toBeNull();
+  });
+});
+
+describe('buildBwrapCommand', () => {
+  let policy: ReturnType<typeof createPathPolicy>;
+
+  beforeEach(() => {
+    policy = createPathPolicy();
+  });
+
+  it('starts with bwrap', () => {
+    const cmd = buildBwrapCommand('echo hello', policy);
+    expect(cmd[0]).toBe('bwrap');
+  });
+
+  it('includes --ro-bind / /', () => {
+    const cmd = buildBwrapCommand('echo hello', policy);
+    const joined = cmd.join(' ');
+    expect(joined).toContain('--ro-bind / /');
+  });
+
+  it('includes --tmpfs /tmp', () => {
+    const cmd = buildBwrapCommand('echo hello', policy);
+    const joined = cmd.join(' ');
+    expect(joined).toContain('--tmpfs /tmp');
+  });
+
+  it('includes --bind /dev /dev', () => {
+    const cmd = buildBwrapCommand('echo hello', policy);
+    const joined = cmd.join(' ');
+    expect(joined).toContain('--bind /dev /dev');
+  });
+
+  it('includes --bind /dev/shm /dev/shm', () => {
+    const cmd = buildBwrapCommand('echo hello', policy);
+    const joined = cmd.join(' ');
+    expect(joined).toContain('--bind /dev/shm /dev/shm');
+  });
+
+  it('includes --unshare-pid and --unshare-net', () => {
+    const cmd = buildBwrapCommand('echo hello', policy);
+    const joined = cmd.join(' ');
+    expect(joined).toContain('--unshare-pid');
+    expect(joined).toContain('--unshare-net');
+    expect(joined).not.toContain('--share-net');
+  });
+
+  it('includes --bind for registered writable paths', () => {
+    const workspacePath = path.resolve('/mnt/workspace');
+    policy.registerWritable(workspacePath);
+    const cmd = buildBwrapCommand('echo hello', policy);
+    const joined = cmd.join(' ');
+    expect(joined).toContain(`--bind ${workspacePath} ${workspacePath}`);
+  });
+
+  it('includes --bind for docker socket if it exists', () => {
+    const cmd = buildBwrapCommand('echo hello', policy);
+    const joined = cmd.join(' ');
+    // docker.sock is only bound if it exists on the host
+    if (fs.existsSync('/var/run/docker.sock')) {
+      expect(joined).toContain('--bind /var/run/docker.sock /var/run/docker.sock');
+    }
+  });
+
+  it('ends with -- followed by sh -c wrapper script', () => {
+    const cmd = buildBwrapCommand('echo hello world', policy);
+    const afterDash = cmd.slice(cmd.indexOf('--') + 1);
+    // All commands are wrapped via sh -c with socat forwarder
+    expect(afterDash[0]).toBe('sh');
+    expect(afterDash[1]).toBe('-c');
+    // The wrapper script should contain the original command
+    const wrapperScript = afterDash[2];
+    expect(wrapperScript).toContain('echo hello world');
+  });
+
+  it('wraps command in shell when shell wrapper is needed', () => {
+    const cmd = buildBwrapCommand('echo "hello world"', policy);
+    const afterDash = cmd.slice(cmd.indexOf('--') + 1);
+    // All commands (including complex ones) are wrapped in sh -c with socat
+    expect(afterDash[0]).toBe('sh');
+    expect(afterDash[1]).toBe('-c');
+    const wrapperScript = afterDash[2];
+    expect(wrapperScript).toContain('echo "hello world"');
+  });
+
+  it('adds --bind for fixed resolv.conf when host uses systemd-resolved', () => {
+    // Create a temp resolv.conf with localhost nameserver
+    const tmpResolv = path.join(os.tmpdir(), `test-resolv-dns-${Date.now()}.conf`);
+    fs.writeFileSync(tmpResolv, 'nameserver 127.0.0.53\n');
+    try {
+      const cmd = buildBwrapCommand('echo hello', policy, { resolvConfPath: tmpResolv });
+      const joined = cmd.join(' ');
+      expect(joined).toContain('/etc/resolv.conf');
+      // The fixed resolv.conf should exist
+      const fixPath = fixResolvConf(tmpResolv);
+      expect(fixPath).not.toBeNull();
+      if (fixPath) {
+        try { fs.unlinkSync(fixPath); } catch {}
+      }
+    } finally {
+      try { fs.unlinkSync(tmpResolv); } catch {}
+    }
+  });
+
+  it('does NOT add resolv.conf override when nameserver is external', () => {
+    const tmpResolv = path.join(os.tmpdir(), `test-resolv-ext-${Date.now()}.conf`);
+    fs.writeFileSync(tmpResolv, 'nameserver 8.8.8.8\n');
+    try {
+      const cmd = buildBwrapCommand('echo hello', policy, { resolvConfPath: tmpResolv });
+      const joined = cmd.join(' ');
+      // Should not include the DNS fix bind
+      expect(joined).not.toContain('my-agent-resolv.conf');
+    } finally {
+      try { fs.unlinkSync(tmpResolv); } catch {}
+    }
+  });
+
+  it('includes proxy socket bind-mount when socket file exists', () => {
+    // Create a dummy socket file so the bind-mount is included
+    const sockPath = '/tmp/my-agent-proxy.sock';
+    const existed = fs.existsSync(sockPath);
+    if (!existed) {
+      fs.writeFileSync(sockPath, '');
+    }
+    try {
+      const cmd = buildBwrapCommand('echo hello', policy, { proxyPort: 21999 });
+      const joined = cmd.join(' ');
+      expect(joined).toContain('--bind /tmp/my-agent-proxy.sock /tmp/my-agent-proxy.sock');
+    } finally {
+      if (!existed) {
+        try { fs.unlinkSync(sockPath); } catch {}
+      }
+    }
+  });
+
+  it('skips proxy socket bind-mount when socket file does not exist', () => {
+    // Ensure socket file doesn't exist
+    const sockPath = '/tmp/my-agent-proxy.sock';
+    try { fs.unlinkSync(sockPath); } catch {}
+    const cmd = buildBwrapCommand('echo hello', policy, { proxyPort: 21998 });
+    const joined = cmd.join(' ');
+    expect(joined).not.toContain('--bind /tmp/my-agent-proxy.sock');
+  });
+
+  it('wraps all commands with socat forwarder script using configured port', () => {
+    const cmd = buildBwrapCommand('npm install express', policy, { proxyPort: 21997 });
+    const afterDash = cmd.slice(cmd.indexOf('--') + 1);
+    expect(afterDash[0]).toBe('sh');
+    expect(afterDash[1]).toBe('-c');
+    const wrapper = afterDash[2];
+    expect(wrapper).toContain('socat TCP-LISTEN:21997');
+    expect(wrapper).toContain('UNIX-CONNECT:/tmp/my-agent-proxy.sock');
+    expect(wrapper).toContain('npm install express');
+  });
+
+  it('injects proxy environment variables with configured port', () => {
+    const cmd = buildBwrapCommand('echo hello', policy, { proxyPort: 21996 });
+    const afterDash = cmd.slice(cmd.indexOf('--') + 1);
+    const wrapper = afterDash[2];
+    expect(wrapper).toContain('HTTP_PROXY=http://127.0.0.1:21996');
+    expect(wrapper).toContain('HTTPS_PROXY=http://127.0.0.1:21996');
+    expect(wrapper).toContain('http_proxy=http://127.0.0.1:21996');
+    expect(wrapper).toContain('https_proxy=http://127.0.0.1:21996');
+  });
+
+  it('wrapper script includes cleanup trap and port polling', () => {
+    const cmd = buildBwrapCommand('echo hello', policy, { proxyPort: 21995 });
+    const afterDash = cmd.slice(cmd.indexOf('--') + 1);
+    const wrapper = afterDash[2];
+    expect(wrapper).toContain('trap cleanup EXIT INT TERM');
+    expect(wrapper).toContain('SOCAT_PID=$!');
+    // Uses polling loop (for _ in seq) instead of a bare sleep before proxy setup
+    expect(wrapper).toContain('for _ in $(seq 1 50)');
+    expect(wrapper).toContain('/dev/tcp/127.0.0.1/21995');
+  });
+
+  it('defaults to port 19877 when no proxyPort is given', () => {
+    const cmd = buildBwrapCommand('echo hello', policy);
+    const afterDash = cmd.slice(cmd.indexOf('--') + 1);
+    const wrapper = afterDash[2];
+    expect(wrapper).toContain('socat TCP-LISTEN:19877');
+  });
+});

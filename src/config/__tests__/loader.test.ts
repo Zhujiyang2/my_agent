@@ -50,6 +50,12 @@ describe('loadConfig', () => {
         agent_budget: 2000,
         compress_threshold: 5,
       },
+      sandbox: {
+        enabled: true,
+        engine: 'bwrap',
+        extra_protect_paths: [],
+        fallback_to_warn: true,
+      },
     });
   });
 
@@ -105,5 +111,54 @@ describe('loadConfig', () => {
     expect(typeof result.api_url).toBe('string');
     expect(typeof result.model).toBe('string');
     expect(typeof result.api_key).toBe('string');
+  });
+});
+
+describe('sandbox config', () => {
+  it('loads sandbox config with defaults when section is missing', () => {
+    const tmpFile = path.join(os.tmpdir(), `my-agent-test-sandbox-${Date.now()}.json`);
+    fs.writeFileSync(
+      tmpFile,
+      JSON.stringify({
+        api_url: 'https://api.example.com/v1',
+        model: 'test-model',
+        api_key: 'sk-test',
+      })
+    );
+    try {
+      const config = loadConfig(tmpFile);
+      expect(config.sandbox.enabled).toBe(true);
+      expect(config.sandbox.engine).toBe('bwrap');
+      expect(config.sandbox.extra_protect_paths).toEqual([]);
+      expect(config.sandbox.fallback_to_warn).toBe(true);
+    } finally {
+      fs.unlinkSync(tmpFile);
+    }
+  });
+
+  it('loads custom sandbox config', () => {
+    const tmpFile = path.join(os.tmpdir(), `my-agent-test-sandbox-${Date.now()}.json`);
+    fs.writeFileSync(
+      tmpFile,
+      JSON.stringify({
+        api_url: 'https://api.example.com/v1',
+        model: 'test-model',
+        api_key: 'sk-test',
+        sandbox: {
+          enabled: false,
+          engine: 'bwrap',
+          extra_protect_paths: ['/opt/secrets', '/data/private'],
+          fallback_to_warn: false,
+        },
+      })
+    );
+    try {
+      const config = loadConfig(tmpFile);
+      expect(config.sandbox.enabled).toBe(false);
+      expect(config.sandbox.extra_protect_paths).toEqual(['/opt/secrets', '/data/private']);
+      expect(config.sandbox.fallback_to_warn).toBe(false);
+    } finally {
+      fs.unlinkSync(tmpFile);
+    }
   });
 });

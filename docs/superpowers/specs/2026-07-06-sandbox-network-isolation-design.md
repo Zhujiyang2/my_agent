@@ -1,0 +1,234 @@
+# Sandbox Network Isolation — 设计规格
+
+## 1. 背景
+
+当前沙箱使用 `bwrap --share-net`，Agent 直接共享宿主机网络栈。在启用了 Tavily MCP（沙箱外工具可访问任意 URL）的场景下，沙箱内实际需要的出站网络是有限的、可预测的：
+
+| 沙箱内需求 | 域名 |
+|-----------|------|
+| Docker 镜像拉取 | `docker.io`, `registry-1.docker.io`, `quay.io` |
+| 模型权重下载 | `huggingface.co`, `hf.co`, `cdn-lfs.huggingface.co`, `modelscope.cn` |
+| Python 包安装 | `pypi.org`, `files.pythonhosted.org` |
+| 代码克隆 | `github.com`, `raw.githubusercontent.com` |
+| Node 包安装 | `registry.npmjs.org` |
+| 用户自定义 | 通过配置追加 |
+
+Tavily 搜索/网页抓取由 MCP 工具在沙箱外完成，不需要沙箱内直接访问任意外网。
+
+**注意**：`docker pull` 实际流程是 Docker CLI → Unix socket → **宿主机 daemon** → 外网拉镜像。沙箱内的 CLI 只发指令，真正出站的是宿主机 daemon。因此 Docker 操作**完全不受 `--unshare-net` 影响**，白名单中的 Docker registry 域名为冗余保护（daemon 层面也可配置镜像代理）。
+
+**目标**：将沙箱从 `--share-net` 改为 `--unshare-net` + 域名白名单代理，在保留必要网络能力的同时防止 prompt injection 导致的数据外传。
+
+## 2. 架构
+
+```
+宿主机 (Host)
+┌───────────────────────────────────────────────────────────┐
+│  ┌─────────────────────┐                                  │
+│  │  ProxyServer         │  域名白名单 + 确认回调            │
+│  │  监听 Unix socket:   │  docker.io ✓                    │
+│  │  /tmp/agent-proxy    │  quay.io ✓                      │
+│  │                      │  huggingface.co ✓               │
+│  │  日志审计             │  modelscope.cn ✓                │
+│  └──────────┬──────────┘  pypi.org ✓                      │
+│             │              github.com ✓                    │
+│             │              unknown → onConfirm 回调         │
+│  ═══════════╪════════════ bwrap namespace ═══════════════ │
+│             │ (--bind mount)                               │
+│  ┌──────────▼──────────┐                                   │
+│  │  socat               │  TCP → Unix socket 转发          │
+│  │  TCP:19877 →         │                                   │
+│  │  /tmp/agent-proxy    │                                   │
+│  └──────────┬──────────┘                                   │
+│             │                                              │
+│  ┌──────────▼──────────┐                                   │
+│  │  沙箱内进程            │                                  │
+│  │  HTTP_PROXY=          │                                  │
+│  │  http://127.0.0.1:19877│                                │
+│  │  HTTPS_PROXY=         │                                  │
+│  │  http://127.0.0.1:19877│                                │
+│  └──────────────────────┘                                  │
+│                                                            │
+│  Docker socket ─── Unix socket, 不受 --unshare-net 影响     │
+│  NPU devices ─── 设备文件, 不受 --unshare-net 影响           │
+│  Tavily MCP    ─── 沙箱外, 不受限制                         │
+└───────────────────────────────────────────────────────────┘
+```
+
+## 3. 模块设计
+
+### 3.1 代理服务器 (net-proxy.ts)
+
+```
+export interface ProxyConfig {
+  allowedDomains: string[];     // 白名单域名（支持 *.example.com 通配符）
+  blockedDomains: string[];     // 黑名单（优先级高于白名单）
+  onConfirm?: (domain: string) => Promise<boolean>;  // 未知域名确认回调
+  logAccess: (entry: AccessLogEntry) => void;         // 审计日志
+}
+
+export interface AccessLogEntry {
+  domain: string;
+  timestamp: number;
+  method: string;
+  path: string;
+  allowed: boolean;
+  bytesSent: number;
+}
+```
+
+- 监听 Unix domain socket (`/tmp/my-agent-proxy.sock`)
+- HTTP CONNECT 隧道（支持 HTTPS 流量）
+- 域名匹配优先级：黑名单 > 白名单 > onConfirm
+- 支持 `*.example.com` 通配符匹配
+- 每次请求记录审计日志
+
+### 3.2 bwrap-executor 变更
+
+在现有 bwrap 命令构造中：
+
+1. `--share-net` → `--unshare-net`
+2. 检测并修复 DNS（见 3.5），必要时生成 `/tmp/my-agent-resolv.conf` 并追加 `--bind`
+3. 新增 `--bind /tmp/my-agent-proxy.sock /tmp/my-agent-proxy.sock`（透传代理 socket）
+4. 命令包装：在目标命令前启动 socat 转发，注入代理环境变量
+
+包装后的命令结构：
+
+```
+sh -c '
+  cleanup() { kill $SOCAT_PID 2>/dev/null; }
+  trap cleanup EXIT INT TERM
+  socat TCP-LISTEN:19877,fork,reuseaddr UNIX-CONNECT:/tmp/my-agent-proxy.sock &
+  SOCAT_PID=$!
+  sleep 0.1   # socat 在 1-5ms 内开始监听，100ms 有充足余量
+  export HTTP_PROXY=http://127.0.0.1:19877
+  export HTTPS_PROXY=http://127.0.0.1:19877
+  export http_proxy=http://127.0.0.1:19877
+  export https_proxy=http://127.0.0.1:19877
+  <原始命令>
+  EXIT_CODE=$?
+  cleanup
+  exit $EXIT_CODE
+'
+```
+
+### 3.3 sandbox-manager 变更
+
+- `createSandboxManager` 时接收域名列表，创建代理实例并启动
+- `execute` 流程不变（docker 校验 → bwrap 执行）
+- 代理生命周期随 sandbox-manager 的销毁而关闭
+
+### 3.4 域名配置加载 (net-domains.ts)
+
+```
+export interface SandboxDomainsConfig {
+  extra_allowed_domains: string[];
+  blocked_domains: string[];
+}
+
+export function loadSandboxDomains(filePath?: string): SandboxDomainsConfig
+```
+
+- 从 `~/.my_agent/sandbox-domains.json` 加载
+- 文件不存在时返回空配置
+- 格式错误时打印警告并返回空配置
+
+### 3.5 DNS 解析处理
+
+`--unshare-net` 创建新网络命名空间后，如果宿主机使用 `systemd-resolved`（Ubuntu/Debian 默认），`/etc/resolv.conf` 指向 `127.0.0.53`，在新 netns 中此地址不可达，DNS 解析会失败。
+
+处理方式：在 `buildBwrapCommand` 中，构造 bwrap 参数之前：
+
+1. 读取 `/etc/resolv.conf`
+2. 如果 `nameserver` 指向 `127.x.x.x`（不可达的本地 DNS），创建修复版 `/tmp/my-agent-resolv.conf`：
+   - 优先从 `/run/systemd/resolve/resolv.conf` 获取真实 DNS
+   - 回退用公共 DNS：`8.8.8.8`、`114.114.114.114`
+3. 在 bwrap 参数中追加 `--bind /tmp/my-agent-resolv.conf /etc/resolv.conf`
+
+这样在 `--ro-bind / /` 之后，用 `--bind` 覆盖 `/etc/resolv.conf`（bwrap 后绑定的优先级更高）。
+
+### 3.6 如果 socat 不可用
+
+- 启动时检测 `socat` 可用性
+- 如果 socat 不存在且 `fallback_to_warn: true`：回退到 `--share-net` + 警告
+- 如果 socat 不存在且 `fallback_to_warn: false`：拒绝启动
+
+## 4. 配置
+
+域名白名单独立为 `~/.my_agent/sandbox-domains.json`，不嵌入 `config.json`：
+
+```json
+{
+  "extra_allowed_domains": [
+    "mirrors.aliyun.com",
+    "my-registry.io"
+  ],
+  "blocked_domains": [
+    "pastebin.com",
+    "termbin.com"
+  ]
+}
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `extra_allowed_domains` | `string[]` | 追加到内置白名单 |
+| `blocked_domains` | `string[]` | 黑名单，优先级最高 |
+
+文件不存在时视为空配置（仅内置白名单生效）。
+
+`config.json` 的 `sandbox` 段不需要新增字段（现有的 `enabled` / `engine` / `fallback_to_warn` 已经够用）。
+
+## 5. 内置白名单
+
+```
+docker.io
+registry-1.docker.io
+quay.io
+mirrors.aliyun.com
+my-registry.io
+huggingface.co
+hf.co
+cdn-lfs.huggingface.co
+modelscope.cn
+*.modelscope.cn
+pypi.org
+files.pythonhosted.org
+github.com
+raw.githubusercontent.com
+registry.npmjs.org
+```
+
+生效逻辑：`内置白名单 + extra_allowed_domains - blocked_domains`。
+
+## 6. 文件清单
+
+| 操作 | 文件 | 内容 |
+|------|------|------|
+| 新增 | `src/sandbox/net-proxy.ts` | 代理服务器 + 内置白名单 + 域名匹配 |
+| 新增 | `src/sandbox/net-domains.ts` | 从 `~/.my_agent/sandbox-domains.json` 加载用户自定义域名 |
+| 新增 | `src/sandbox/__tests__/net-proxy.test.ts` | 代理 + 域名匹配测试 |
+| 新增 | `src/sandbox/__tests__/net-domains.test.ts` | 域名配置加载测试 |
+| 修改 | `src/sandbox/bwrap-executor.ts` | --unshare-net、socat 转发、环境变量注入 |
+| 修改 | `src/sandbox/sandbox-manager.ts` | 代理生命周期 |
+| 修改 | `bin/my-agent.ts` | 加载域名配置、初始化代理、注入 onConfirm 回调 |
+
+## 7. 测试策略
+
+| 层级 | 测试内容 |
+|------|---------|
+| net-proxy 单元测试 | 白名单匹配（精确 + 通配符）、黑名单优先、CONNECT 隧道 |
+| bwrap-executor 单元测试 | --unshare-net 参数、socat 命令生成、环境变量注入 |
+| sandbox-manager 集成测试 | 代理启动/停止、execute 流程 |
+| 环境验证 | 沙箱内 docker pull / pip install / wget 白名单域名成功、被拒域名失败 |
+
+## 8. 风险与缓解
+
+| 风险 | 缓解 |
+|------|------|
+| socat 不可用（某些精简 Linux 发行版） | `fallback_to_warn` 回退到 `--share-net` |
+| 白名单不完整导致训推任务中断 | 用户可通过 `extra_allowed_domains` 追加；错误日志明确指出被拒域名 |
+| prompt injection 通过 Tavily MCP 外传数据 | Tavily 在沙箱外运行，不受网络限制影响；文件系统保护（protect 列表）阻止读取凭证文件 |
+| 代理进程崩溃 | sandbox-manager 在 execute 前检查代理是否存活，不可用时回退 |
+| DNS 不可达（systemd-resolved 指向 127.0.0.53） | 检测并生成修复版 resolv.conf，通过 `--bind` 覆盖；回退到公共 DNS |
+| DNS 泄露（域名解析） | 不在本阶段处理——DNS 查询走宿主机配置，可被监控但不可被沙箱内篡改 |

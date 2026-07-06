@@ -29,6 +29,10 @@ import { promptConfirm } from '../src/cli/chat.js';
 import { SubagentManager, setSubagentManager } from '../src/agent/subagent/manager.js';
 import { loadMcpConfig } from '../src/mcp/config.js';
 import { MCPManager, setMCPManager } from '../src/mcp/manager.js';
+import { createSandboxManager, setSandboxManager } from '../src/sandbox/sandbox-manager.js';
+import { loadSandboxDomains } from '../src/sandbox/net-domains.js';
+import { createRegisterWritableTool } from '../src/tools/sandbox/index.js';
+import { defaultRegistry } from '../src/tools/registry.js';
 
 const nodeVersion = process.versions.node.split('.').map(Number);
 if (nodeVersion[0] < 18) {
@@ -100,6 +104,37 @@ async function main(): Promise<void> {
   const mcpManager = new MCPManager();
   mcpManager.initialize(mcpConfig);
   setMCPManager(mcpManager);
+
+  // Initialize sandbox manager with domain config
+  const domainsConfig = loadSandboxDomains();
+  const sandboxMgr = createSandboxManager({
+    ...config.sandbox,
+    domains: {
+      extra_allowed_domains: domainsConfig.extra_allowed_domains,
+      blocked_domains: domainsConfig.blocked_domains,
+    },
+  });
+  setSandboxManager(sandboxMgr);
+
+  // Register sandbox tools
+  defaultRegistry.register(createRegisterWritableTool());
+
+  // Report sandbox status
+  const sandboxStatus = sandboxMgr.getStatus();
+  if (sandboxStatus.enabled) {
+    const parts: string[] = [];
+    if (sandboxStatus.bwrapAvailable) {
+      parts.push('bwrap ✓');
+    } else {
+      parts.push('bwrap ✗ (fallback)');
+    }
+    if (sandboxStatus.socatAvailable) {
+      parts.push('socat ✓');
+    } else {
+      parts.push('socat ✗ (no network isolation)');
+    }
+    console.log(formatInfo(`  Sandbox: ${parts.join(', ')}`));
+  }
 
   // Load skills from project directory
   loadSkills(path.join(process.cwd(), '.my-agent', 'skills'));
@@ -186,6 +221,7 @@ async function main(): Promise<void> {
   rl.on('close', () => {
     subagentManager.destroy();
     mcpManager.destroy().catch(() => {});
+    sandboxMgr.destroy().catch(() => {});
     process.exit(0);
   });
 }
