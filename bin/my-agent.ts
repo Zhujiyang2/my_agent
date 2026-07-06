@@ -30,6 +30,7 @@ import { SubagentManager, setSubagentManager } from '../src/agent/subagent/manag
 import { loadMcpConfig } from '../src/mcp/config.js';
 import { MCPManager, setMCPManager } from '../src/mcp/manager.js';
 import { createSandboxManager, setSandboxManager } from '../src/sandbox/sandbox-manager.js';
+import { loadSandboxDomains } from '../src/sandbox/net-domains.js';
 import { createRegisterWritableTool } from '../src/tools/sandbox/index.js';
 import { defaultRegistry } from '../src/tools/registry.js';
 
@@ -104,8 +105,15 @@ async function main(): Promise<void> {
   mcpManager.initialize(mcpConfig);
   setMCPManager(mcpManager);
 
-  // Initialize sandbox manager
-  const sandboxMgr = createSandboxManager(config.sandbox);
+  // Initialize sandbox manager with domain config
+  const domainsConfig = loadSandboxDomains();
+  const sandboxMgr = createSandboxManager({
+    ...config.sandbox,
+    domains: {
+      extra_allowed_domains: domainsConfig.extra_allowed_domains,
+      blocked_domains: domainsConfig.blocked_domains,
+    },
+  });
   setSandboxManager(sandboxMgr);
 
   // Register sandbox tools
@@ -114,11 +122,18 @@ async function main(): Promise<void> {
   // Report sandbox status
   const sandboxStatus = sandboxMgr.getStatus();
   if (sandboxStatus.enabled) {
+    const parts: string[] = [];
     if (sandboxStatus.bwrapAvailable) {
-      console.log(formatInfo(`  Sandbox: bwrap ✓`));
+      parts.push('bwrap ✓');
     } else {
-      console.log(formatInfo(`  Sandbox: bwrap not found — fallback mode (warn)`));
+      parts.push('bwrap ✗ (fallback)');
     }
+    if (sandboxStatus.socatAvailable) {
+      parts.push('socat ✓');
+    } else {
+      parts.push('socat ✗ (no network isolation)');
+    }
+    console.log(formatInfo(`  Sandbox: ${parts.join(', ')}`));
   }
 
   // Load skills from project directory
