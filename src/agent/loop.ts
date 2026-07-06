@@ -24,6 +24,7 @@ export interface AgentOptions {
 export interface AgentSession {
     send(input: string, signal?: AbortSignal): Promise<string>;
     readonly history: ReadonlyArray<Message>;
+    readonly contextManager: ContextManager;
 }
 
 function toolsToOpenAI(
@@ -241,6 +242,9 @@ export function createAgent(config: Config, options: AgentOptions = {}): AgentSe
         send,
         get history() {
             return [...contextManager.assemble()];
+        },
+        get contextManager() {
+            return contextManager;
         },
     };
 }

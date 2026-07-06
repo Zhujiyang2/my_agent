@@ -36,6 +36,7 @@ function mockAgent(finalText: string, history?: Message[]) {
   return {
     send: vi.fn().mockResolvedValue(finalText),
     history: history ?? [],
+    contextManager: {} as any,
   };
 }
 
@@ -43,6 +44,7 @@ function neverResolvingAgent() {
   return {
     send: vi.fn().mockImplementation(() => new Promise(() => {})),
     history: [],
+    contextManager: {} as any,
   };
 }
 
@@ -50,6 +52,7 @@ function failingAgent(errorMsg: string) {
   return {
     send: vi.fn().mockRejectedValue(new Error(errorMsg)),
     history: [],
+    contextManager: {} as any,
   };
 }
 

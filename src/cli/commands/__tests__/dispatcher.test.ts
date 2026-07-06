@@ -11,7 +11,7 @@ function mockCtx(overrides?: Partial<CommandContext>): CommandContext {
         agent: {
             async send() { return ''; },
             get history(): Message[] { return []; },
-        },
+        } as unknown as CommandContext['agent'],
         contextManager: {
             append() {},
             assemble() { return []; },
