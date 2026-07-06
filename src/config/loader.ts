@@ -81,7 +81,7 @@ export function loadConfig(filePath?: string): Config {
     },
     sandbox: {
       enabled: typeof sandboxCfg.enabled === 'boolean' ? sandboxCfg.enabled : true,
-      engine: (sandboxCfg.engine === 'bwrap' ? 'bwrap' : 'bwrap'),
+      engine: 'bwrap',
       extra_protect_paths:
         Array.isArray(sandboxCfg.extra_protect_paths)
           ? sandboxCfg.extra_protect_paths.filter((p): p is string => typeof p === 'string')

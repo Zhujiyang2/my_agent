@@ -10,7 +10,7 @@ import { execSync } from 'node:child_process';
 
 let sandboxManager: SandboxManager | null = null;
 
-export function setSandboxManager(mgr: SandboxManager): void {
+export function setSandboxManager(mgr: SandboxManager | null): void {
   sandboxManager = mgr;
 }
 
@@ -33,7 +33,6 @@ export function createSandboxManager(config: SandboxConfig): SandboxManager {
     extraProtectPaths: config.extra_protect_paths,
   });
   const dockerValidator = createDockerValidator(policy);
-  const bwrapAvailable = isBwrapAvailable();
 
   return {
     async execute(
@@ -60,6 +59,9 @@ export function createSandboxManager(config: SandboxConfig): SandboxManager {
           };
         }
       }
+
+      // Check bwrap availability fresh on each execute call
+      const bwrapAvailable = isBwrapAvailable();
 
       // If bwrap is unavailable, fall back to direct execution
       if (!bwrapAvailable) {
@@ -111,7 +113,7 @@ export function createSandboxManager(config: SandboxConfig): SandboxManager {
       return {
         enabled: config.enabled,
         engine: config.engine,
-        bwrapAvailable,
+        bwrapAvailable: isBwrapAvailable(),
         writablePaths: policy.getWritablePaths(),
         protectPaths: policy.getProtectPaths(),
       };
@@ -148,10 +150,18 @@ function executeDirect(
       killed?: boolean;
     };
     if (err.killed) {
+      const partial = (
+        (typeof err.stdout === 'string' ? err.stdout : err.stdout?.toString('utf-8') ?? '') +
+        '\n' +
+        (typeof err.stderr === 'string' ? err.stderr : err.stderr?.toString('utf-8') ?? '')
+      ).trim();
       return {
-        content: '[TRUNCATED: command timed out]',
-        summary: 'exit=timeout',
+        content: partial
+          ? partial + '\n[TRUNCATED: command timed out]'
+          : '[TRUNCATED: command timed out, no output captured]',
+        summary: 'exit=timeout | command timed out',
         exitCode: undefined,
+        keyOutput: partial?.slice(0, 300),
         isError: true,
       };
     }

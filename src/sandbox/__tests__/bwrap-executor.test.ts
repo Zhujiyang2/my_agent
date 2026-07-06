@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { buildBwrapCommand, isBwrapAvailable, findBwrap } from '../bwrap-executor';
 import { createPathPolicy } from '../path-policy';
 import path from 'node:path';
+import fs from 'node:fs';
 
 describe('findBwrap', () => {
   it('returns a string path or null', () => {
@@ -68,10 +69,13 @@ describe('buildBwrapCommand', () => {
     expect(joined).toContain(`--bind ${workspacePath} ${workspacePath}`);
   });
 
-  it('includes --bind for docker socket', () => {
+  it('includes --bind for docker socket if it exists', () => {
     const cmd = buildBwrapCommand('echo hello', policy);
     const joined = cmd.join(' ');
-    expect(joined).toContain('--bind /var/run/docker.sock /var/run/docker.sock');
+    // docker.sock is only bound if it exists on the host
+    if (fs.existsSync('/var/run/docker.sock')) {
+      expect(joined).toContain('--bind /var/run/docker.sock /var/run/docker.sock');
+    }
   });
 
   it('ends with -- followed by the target command', () => {

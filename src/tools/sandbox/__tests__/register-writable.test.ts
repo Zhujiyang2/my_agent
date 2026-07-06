@@ -14,7 +14,7 @@ describe('register_writable_path tool', () => {
   });
 
   afterEach(() => {
-    setSandboxManager(null as unknown as ReturnType<typeof createSandboxManager>);
+    setSandboxManager(null);
   });
 
   it('has correct name', () => {
@@ -25,7 +25,7 @@ describe('register_writable_path tool', () => {
   it('registers a valid path', async () => {
     const tool = createRegisterWritableTool();
     // Use a Unix-style path for testing — sandbox is a Linux feature
-    const tmpDir = `/tmp/rw-test-${Date.now()}`;
+    const tmpDir = `/tmp/rw-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     try {
       const result = await tool.handler({ path: tmpDir });
       expect(result.isError).toBeFalsy();

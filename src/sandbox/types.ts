@@ -11,11 +11,6 @@ export interface SandboxConfig {
   fallback_to_warn: boolean;
 }
 
-export interface WritableRegistration {
-  path: string;
-  registeredAt: number;
-}
-
 export interface SandboxStatus {
   enabled: boolean;
   engine: string;

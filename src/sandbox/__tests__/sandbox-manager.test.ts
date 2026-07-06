@@ -15,7 +15,7 @@ describe('createSandboxManager', () => {
   });
 
   afterEach(() => {
-    setSandboxManager(null as unknown as ReturnType<typeof createSandboxManager>);
+    setSandboxManager(null);
   });
 
   describe('getStatus', () => {
@@ -31,7 +31,7 @@ describe('createSandboxManager', () => {
 
   describe('registerWritable', () => {
     it('registers a path and creates the directory on host', () => {
-      const tmpDir = path.join(os.tmpdir(), `sandbox-test-${Date.now()}`);
+      const tmpDir = path.join(os.tmpdir(), `sandbox-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
       try {
         const result = mgr.registerWritable(tmpDir);
         expect(result.ok).toBe(true);

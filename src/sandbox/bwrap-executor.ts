@@ -1,5 +1,6 @@
 // src/sandbox/bwrap-executor.ts
 import { execSync, execFileSync } from 'node:child_process';
+import fs from 'node:fs';
 import type { PathPolicy } from './path-policy';
 import type { ToolResult } from '../tools/types';
 
@@ -51,8 +52,10 @@ function buildBwrapCommand(
   // Shared memory for CANN/PyTorch
   args.push('--bind', '/dev/shm', '/dev/shm');
 
-  // Docker socket for container orchestration
-  args.push('--bind', '/var/run/docker.sock', '/var/run/docker.sock');
+  // Docker socket for container orchestration (only if it exists on host)
+  if (fs.existsSync('/var/run/docker.sock')) {
+    args.push('--bind', '/var/run/docker.sock', '/var/run/docker.sock');
+  }
 
   // Dynamic writable paths
   for (const wp of policy.getWritablePaths()) {
@@ -90,16 +93,13 @@ function executeInBwrap(
 ): ToolResult {
   const bwrapPath = findBwrap();
   if (!bwrapPath) {
-    return {
-      content:
-        '[SANDBOX WARNING] bwrap is not available on this system. ' +
-        'Command executed without filesystem isolation.\n' +
-        'Install bubblewrap: apt install bubblewrap / dnf install bubblewrap\n\n' +
-        'Continuing with existing high-risk pattern detection only.',
-      summary: 'sandbox=unavailable | bwrap not found',
-      exitCode: 0,
-      keyOutput: 'bwrap not available — running without sandbox',
-    };
+    // This should not happen in normal flow — the caller (sandbox-manager)
+    // gates on isBwrapAvailable(). If reached, it means bwrap was removed
+    // after creation. Throw so the error is loud and clear, never silent.
+    throw new Error(
+      'bwrap was expected to be available but is not found. ' +
+      'Install bubblewrap: apt install bubblewrap / dnf install bubblewrap'
+    );
   }
 
   const args = buildBwrapCommand(command, policy);
