@@ -41,6 +41,12 @@ const TEST_CONFIG: Config = {
     agent_budget: 100,
     compress_threshold: 0.8,
   },
+  sandbox: {
+    enabled: true,
+    engine: 'bwrap' as const,
+    extra_protect_paths: [],
+    fallback_to_warn: true,
+  },
 };
 
 function makeTextResult(content: string): StreamResult {

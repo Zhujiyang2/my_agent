@@ -29,6 +29,9 @@ import { promptConfirm } from '../src/cli/chat.js';
 import { SubagentManager, setSubagentManager } from '../src/agent/subagent/manager.js';
 import { loadMcpConfig } from '../src/mcp/config.js';
 import { MCPManager, setMCPManager } from '../src/mcp/manager.js';
+import { createSandboxManager, setSandboxManager } from '../src/sandbox/sandbox-manager.js';
+import { createRegisterWritableTool } from '../src/tools/sandbox/index.js';
+import { defaultRegistry } from '../src/tools/registry.js';
 
 const nodeVersion = process.versions.node.split('.').map(Number);
 if (nodeVersion[0] < 18) {
@@ -100,6 +103,23 @@ async function main(): Promise<void> {
   const mcpManager = new MCPManager();
   mcpManager.initialize(mcpConfig);
   setMCPManager(mcpManager);
+
+  // Initialize sandbox manager
+  const sandboxMgr = createSandboxManager(config.sandbox);
+  setSandboxManager(sandboxMgr);
+
+  // Register sandbox tools
+  defaultRegistry.register(createRegisterWritableTool());
+
+  // Report sandbox status
+  const sandboxStatus = sandboxMgr.getStatus();
+  if (sandboxStatus.enabled) {
+    if (sandboxStatus.bwrapAvailable) {
+      console.log(formatInfo(`  Sandbox: bwrap ✓`));
+    } else {
+      console.log(formatInfo(`  Sandbox: bwrap not found — fallback mode (warn)`));
+    }
+  }
 
   // Load skills from project directory
   loadSkills(path.join(process.cwd(), '.my-agent', 'skills'));

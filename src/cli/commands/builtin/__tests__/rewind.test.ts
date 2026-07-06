@@ -72,6 +72,12 @@ describe('/rewind', () => {
         context: { max_context_tokens: 100000, recent_rounds: 3 },
         subagent: { max_concurrent: 8, default_timeout_ms: 600000, max_inbox_size: 50 },
         memory: { enabled: false, user_budget: 100, agent_budget: 100, compress_threshold: 0.8 },
+        sandbox: {
+            enabled: true,
+            engine: 'bwrap' as const,
+            extra_protect_paths: [],
+            fallback_to_warn: true,
+        },
     };
 
     function mockContext(overrides?: Partial<CommandContext>): CommandContext {
