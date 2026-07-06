@@ -108,11 +108,26 @@ sh -c '
 
 ### 3.3 sandbox-manager 变更
 
-- `createSandboxManager` 时创建代理实例并启动
+- `createSandboxManager` 时接收域名列表，创建代理实例并启动
 - `execute` 流程不变（docker 校验 → bwrap 执行）
 - 代理生命周期随 sandbox-manager 的销毁而关闭
 
-### 3.4 如果 socat 不可用
+### 3.4 域名配置加载 (net-domains.ts)
+
+```
+export interface SandboxDomainsConfig {
+  extra_allowed_domains: string[];
+  blocked_domains: string[];
+}
+
+export function loadSandboxDomains(filePath?: string): SandboxDomainsConfig
+```
+
+- 从 `~/.my_agent/sandbox-domains.json` 加载
+- 文件不存在时返回空配置
+- 格式错误时打印警告并返回空配置
+
+### 3.5 如果 socat 不可用
 
 - 启动时检测 `socat` 可用性
 - 如果 socat 不存在且 `fallback_to_warn: true`：回退到 `--share-net` + 警告
@@ -120,46 +135,29 @@ sh -c '
 
 ## 4. 配置
 
-`~/.my_agent/config.json`：
+域名白名单独立为 `~/.my_agent/sandbox-domains.json`，不嵌入 `config.json`：
 
 ```json
 {
-  "sandbox": {
-    "enabled": true,
-    "engine": "bwrap",
-    "network": {
-      "extra_allowed_domains": [
-        "mirrors.aliyun.com",
-        "my-registry.internal.io"
-      ],
-      "blocked_domains": [
-        "pastebin.com",
-        "termbin.com"
-      ]
-    },
-    "extra_protect_paths": [],
-    "fallback_to_warn": true
-  }
+  "extra_allowed_domains": [
+    "mirrors.aliyun.com",
+    "my-registry.io"
+  ],
+  "blocked_domains": [
+    "pastebin.com",
+    "termbin.com"
+  ]
 }
 ```
 
-新增 `SandboxNetworkConfig`：
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `extra_allowed_domains` | `string[]` | 追加到内置白名单 |
+| `blocked_domains` | `string[]` | 黑名单，优先级最高 |
 
-```typescript
-export interface SandboxNetworkConfig {
-  extra_allowed_domains: string[];
-  blocked_domains: string[];
-}
-```
+文件不存在时视为空配置（仅内置白名单生效）。
 
-默认值：
-
-```typescript
-const DEFAULT_NETWORK_CONFIG: SandboxNetworkConfig = {
-  extra_allowed_domains: [],
-  blocked_domains: [],
-};
-```
+`config.json` 的 `sandbox` 段不需要新增字段（现有的 `enabled` / `engine` / `fallback_to_warn` 已经够用）。
 
 ## 5. 内置白名单
 
@@ -167,6 +165,8 @@ const DEFAULT_NETWORK_CONFIG: SandboxNetworkConfig = {
 docker.io
 registry-1.docker.io
 quay.io
+mirrors.aliyun.com
+my-registry.io
 huggingface.co
 hf.co
 cdn-lfs.huggingface.co
@@ -179,18 +179,19 @@ raw.githubusercontent.com
 registry.npmjs.org
 ```
 
+生效逻辑：`内置白名单 + extra_allowed_domains - blocked_domains`。
+
 ## 6. 文件清单
 
 | 操作 | 文件 | 内容 |
 |------|------|------|
-| 新增 | `src/sandbox/net-proxy.ts` | 代理服务器 |
-| 新增 | `src/sandbox/__tests__/net-proxy.test.ts` | 代理测试 |
-| 修改 | `src/sandbox/types.ts` | SandboxConfig 增加 network 字段 |
-| 修改 | `src/sandbox/bwrap-executor.ts` | --unshare-net、socat 转发、环境变量 |
+| 新增 | `src/sandbox/net-proxy.ts` | 代理服务器 + 内置白名单 + 域名匹配 |
+| 新增 | `src/sandbox/net-domains.ts` | 从 `~/.my_agent/sandbox-domains.json` 加载用户自定义域名 |
+| 新增 | `src/sandbox/__tests__/net-proxy.test.ts` | 代理 + 域名匹配测试 |
+| 新增 | `src/sandbox/__tests__/net-domains.test.ts` | 域名配置加载测试 |
+| 修改 | `src/sandbox/bwrap-executor.ts` | --unshare-net、socat 转发、环境变量注入 |
 | 修改 | `src/sandbox/sandbox-manager.ts` | 代理生命周期 |
-| 修改 | `src/config/types.ts` | SandboxNetworkConfig 类型 |
-| 修改 | `src/config/loader.ts` | 解析 network 配置 |
-| 修改 | `bin/my-agent.ts` | 初始化代理，注入 onConfirm 回调 |
+| 修改 | `bin/my-agent.ts` | 加载域名配置、初始化代理、注入 onConfirm 回调 |
 
 ## 7. 测试策略
 
