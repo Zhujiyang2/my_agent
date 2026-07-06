@@ -53,7 +53,16 @@ async function main(): Promise<void> {
   console.log(formatInfo('  /exit to quit | Ctrl+C to interrupt'));
   console.log('');
 
-  const contextManager = createContextManager(config.context, config.model);
+  const contextManager = createContextManager(
+    {
+      ...config.context,
+      systemPrompt: config.context.systemPrompt ??
+        'You are My Agent, an AI-powered coding assistant running in the terminal. ' +
+        'You have access to tools for reading/writing files, running shell commands, ' +
+        'spawning subagents, and more. Use your tools to help the user accomplish their tasks.',
+    },
+    config.model,
+  );
 
   const agent = createAgent(config, {
     onToken: (token) => process.stdout.write(token),

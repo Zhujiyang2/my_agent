@@ -10,6 +10,7 @@ export interface ToolsConfig {
 export interface ContextConfig {
   max_context_tokens: number;   // 0 = auto (80% of model window)
   recent_rounds: number;        // 保留原始输出的轮数，默认 3
+  systemPrompt?: string;        // persistent system prompt, survives /clear
 }
 
 export interface SubagentConfig {

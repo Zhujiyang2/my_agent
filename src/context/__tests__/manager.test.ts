@@ -345,6 +345,21 @@ describe('createContextManager', () => {
         expect(cm.getState()).toEqual({});
     });
 
+    it('clear preserves system prompt from config', () => {
+        const cmWithPrompt = createContextManager({
+            ...CONTEXT_CONFIG,
+            systemPrompt: 'You are a helpful assistant.',
+        });
+        cmWithPrompt.append(userMsg('hello'));
+        cmWithPrompt.append(assistantMsg('hi'));
+        cmWithPrompt.clear();
+
+        const messages = cmWithPrompt.assemble();
+        expect(messages).toHaveLength(1);
+        expect(messages[0].role).toBe('system');
+        expect(messages[0].content).toBe('You are a helpful assistant.');
+    });
+
     it('clear resets round counter', () => {
         cm.append(userMsg('q1'));  // round 1
         cm.append(assistantMsg('a1'));

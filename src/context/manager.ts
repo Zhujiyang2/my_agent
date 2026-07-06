@@ -37,6 +37,11 @@ export function createContextManager(config: ContextConfig, model = 'gpt-4o', me
     function assemble(): Message[] {
         const result: Message[] = [];
 
+        // Layer -1: System identity (from config, survives /clear)
+        if (config.systemPrompt) {
+            result.push({ role: 'system', content: config.systemPrompt });
+        }
+
         // Layer 0: Memory
         const memSystemMsg = memoryManager?.assemble();
         if (memSystemMsg) {
