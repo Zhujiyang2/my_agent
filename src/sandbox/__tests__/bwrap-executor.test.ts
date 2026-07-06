@@ -163,38 +163,69 @@ describe('buildBwrapCommand', () => {
     }
   });
 
-  it('includes proxy socket bind-mount', () => {
-    const cmd = buildBwrapCommand('echo hello', policy);
-    const joined = cmd.join(' ');
-    expect(joined).toContain('--bind /tmp/my-agent-proxy.sock /tmp/my-agent-proxy.sock');
+  it('includes proxy socket bind-mount when socket file exists', () => {
+    // Create a dummy socket file so the bind-mount is included
+    const sockPath = '/tmp/my-agent-proxy.sock';
+    const existed = fs.existsSync(sockPath);
+    if (!existed) {
+      fs.writeFileSync(sockPath, '');
+    }
+    try {
+      const cmd = buildBwrapCommand('echo hello', policy, { proxyPort: 21999 });
+      const joined = cmd.join(' ');
+      expect(joined).toContain('--bind /tmp/my-agent-proxy.sock /tmp/my-agent-proxy.sock');
+    } finally {
+      if (!existed) {
+        try { fs.unlinkSync(sockPath); } catch {}
+      }
+    }
   });
 
-  it('wraps all commands with socat forwarder script', () => {
-    const cmd = buildBwrapCommand('npm install express', policy);
+  it('skips proxy socket bind-mount when socket file does not exist', () => {
+    // Ensure socket file doesn't exist
+    const sockPath = '/tmp/my-agent-proxy.sock';
+    try { fs.unlinkSync(sockPath); } catch {}
+    const cmd = buildBwrapCommand('echo hello', policy, { proxyPort: 21998 });
+    const joined = cmd.join(' ');
+    expect(joined).not.toContain('--bind /tmp/my-agent-proxy.sock');
+  });
+
+  it('wraps all commands with socat forwarder script using configured port', () => {
+    const cmd = buildBwrapCommand('npm install express', policy, { proxyPort: 21997 });
     const afterDash = cmd.slice(cmd.indexOf('--') + 1);
     expect(afterDash[0]).toBe('sh');
     expect(afterDash[1]).toBe('-c');
     const wrapper = afterDash[2];
-    expect(wrapper).toContain('socat TCP-LISTEN:19877');
+    expect(wrapper).toContain('socat TCP-LISTEN:21997');
     expect(wrapper).toContain('UNIX-CONNECT:/tmp/my-agent-proxy.sock');
     expect(wrapper).toContain('npm install express');
   });
 
-  it('injects proxy environment variables', () => {
-    const cmd = buildBwrapCommand('echo hello', policy);
+  it('injects proxy environment variables with configured port', () => {
+    const cmd = buildBwrapCommand('echo hello', policy, { proxyPort: 21996 });
     const afterDash = cmd.slice(cmd.indexOf('--') + 1);
     const wrapper = afterDash[2];
-    expect(wrapper).toContain('HTTP_PROXY=http://127.0.0.1:19877');
-    expect(wrapper).toContain('HTTPS_PROXY=http://127.0.0.1:19877');
-    expect(wrapper).toContain('http_proxy=http://127.0.0.1:19877');
-    expect(wrapper).toContain('https_proxy=http://127.0.0.1:19877');
+    expect(wrapper).toContain('HTTP_PROXY=http://127.0.0.1:21996');
+    expect(wrapper).toContain('HTTPS_PROXY=http://127.0.0.1:21996');
+    expect(wrapper).toContain('http_proxy=http://127.0.0.1:21996');
+    expect(wrapper).toContain('https_proxy=http://127.0.0.1:21996');
   });
 
-  it('wrapper script includes cleanup trap', () => {
-    const cmd = buildBwrapCommand('echo hello', policy);
+  it('wrapper script includes cleanup trap and port polling', () => {
+    const cmd = buildBwrapCommand('echo hello', policy, { proxyPort: 21995 });
     const afterDash = cmd.slice(cmd.indexOf('--') + 1);
     const wrapper = afterDash[2];
     expect(wrapper).toContain('trap cleanup EXIT INT TERM');
     expect(wrapper).toContain('SOCAT_PID=$!');
+    // Uses polling loop (for _ in seq) instead of a bare sleep before proxy setup
+    expect(wrapper).toContain('for _ in $(seq 1 50)');
+    expect(wrapper).toContain('/dev/tcp/127.0.0.1/21995');
+  });
+
+  it('defaults to port 19877 when no proxyPort is given', () => {
+    const cmd = buildBwrapCommand('echo hello', policy);
+    const afterDash = cmd.slice(cmd.indexOf('--') + 1);
+    const wrapper = afterDash[2];
+    expect(wrapper).toContain('socat TCP-LISTEN:19877');
   });
 });

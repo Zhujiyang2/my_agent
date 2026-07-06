@@ -63,15 +63,20 @@ function fixResolvConf(resolvConfPath?: string): string | null {
   }
 }
 
-export interface BuildBwrapOptions {
+interface BuildBwrapOptions {
   /** Override path to resolv.conf for testing */
   resolvConfPath?: string;
+  /** TCP port for the socat→proxy forwarder (avoids hardcoded port conflicts) */
+  proxyPort?: number;
 }
 
 /**
  * Build the bwrap shell command array.
- * Complex commands (containing quotes, pipes, redirects, etc.) are
- * wrapped in `sh -c` to ensure proper shell interpretation.
+ *
+ * All commands are wrapped in a socat-based network proxy forwarder:
+ * socat listens on a local TCP port and forwards to the Unix-domain
+ * HTTP CONNECT proxy socket, enabling domain-filtered network access
+ * inside the isolated network namespace.
  */
 function buildBwrapCommand(
   command: string,
@@ -114,23 +119,33 @@ function buildBwrapCommand(
     args.push('--bind', resolvConfFix, '/etc/resolv.conf');
   }
 
-  // Bind the proxy Unix socket into the sandbox
-  args.push('--bind', '/tmp/my-agent-proxy.sock', '/tmp/my-agent-proxy.sock');
+  // Bind the proxy Unix socket into the sandbox (only if it exists)
+  const proxySocketPath = '/tmp/my-agent-proxy.sock';
+  if (fs.existsSync(proxySocketPath)) {
+    args.push('--bind', proxySocketPath, proxySocketPath);
+  }
+
+  const port = options?.proxyPort ?? 19877;
 
   // Separator and target command
   args.push('--');
 
-  // All commands are wrapped with socat forwarder + proxy env vars
+  // All commands are wrapped with socat forwarder + proxy env vars.
+  // Uses polling (not a fixed sleep) to wait for socat to be ready.
   const wrapperScript =
     'cleanup() { kill $SOCAT_PID 2>/dev/null; }; ' +
     'trap cleanup EXIT INT TERM; ' +
-    'socat TCP-LISTEN:19877,fork,reuseaddr UNIX-CONNECT:/tmp/my-agent-proxy.sock & ' +
+    `socat TCP-LISTEN:${port},fork,reuseaddr UNIX-CONNECT:${proxySocketPath} & ` +
     'SOCAT_PID=$!; ' +
-    'sleep 0.1; ' +
-    'export HTTP_PROXY=http://127.0.0.1:19877; ' +
-    'export HTTPS_PROXY=http://127.0.0.1:19877; ' +
-    'export http_proxy=http://127.0.0.1:19877; ' +
-    'export https_proxy=http://127.0.0.1:19877; ' +
+    // Poll until the port is accepting connections (up to 5 seconds)
+    'for _ in $(seq 1 50); do ' +
+    `  (echo >/dev/tcp/127.0.0.1/${port}) 2>/dev/null && break; ` +
+    '  sleep 0.1; ' +
+    'done; ' +
+    `export HTTP_PROXY=http://127.0.0.1:${port}; ` +
+    `export HTTPS_PROXY=http://127.0.0.1:${port}; ` +
+    `export http_proxy=http://127.0.0.1:${port}; ` +
+    `export https_proxy=http://127.0.0.1:${port}; ` +
     command + '; ' +
     'EXIT_CODE=$?; ' +
     'cleanup; ' +
@@ -148,7 +163,7 @@ function buildBwrapCommand(
 function executeInBwrap(
   command: string,
   policy: PathPolicy,
-  options?: { workdir?: string; timeout?: number }
+  options?: { workdir?: string; timeout?: number; proxyPort?: number }
 ): ToolResult {
   const bwrapPath = findBwrap();
   if (!bwrapPath) {
@@ -161,7 +176,12 @@ function executeInBwrap(
     );
   }
 
-  const args = buildBwrapCommand(command, policy);
+  const buildOptions: BuildBwrapOptions = {};
+  if (options?.proxyPort !== undefined) {
+    buildOptions.proxyPort = options.proxyPort;
+  }
+
+  const args = buildBwrapCommand(command, policy, buildOptions);
   // Replace 'bwrap' with actual path
   args[0] = bwrapPath;
 

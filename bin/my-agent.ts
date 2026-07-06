@@ -221,6 +221,7 @@ async function main(): Promise<void> {
   rl.on('close', () => {
     subagentManager.destroy();
     mcpManager.destroy().catch(() => {});
+    sandboxMgr.destroy().catch(() => {});
     process.exit(0);
   });
 }

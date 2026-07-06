@@ -1,5 +1,6 @@
 // src/sandbox/net-proxy.ts
 import net from 'node:net';
+import fs from 'node:fs';
 
 // Built-in domain allowlist for AI workloads
 export const BUILTIN_ALLOWED_DOMAINS = [
@@ -181,6 +182,11 @@ export function createProxyServer(config: ProxyConfig) {
   return {
     async start(): Promise<void> {
       return new Promise((resolve, reject) => {
+        // Clean up stale socket from a previous run
+        if (tcpPort === undefined) {
+          try { fs.unlinkSync(socketPath); } catch {}
+        }
+
         server = net.createServer(handleConnection);
 
         server.on('error', reject);
@@ -215,7 +221,13 @@ export function createProxyServer(config: ProxyConfig) {
           connections.delete(conn);
         }
         if (server) {
-          server.close(() => resolve());
+          server.close(() => {
+            // Clean up Unix socket file
+            if (tcpPort === undefined) {
+              try { fs.unlinkSync(socketPath); } catch {}
+            }
+            resolve();
+          });
         } else {
           resolve();
         }

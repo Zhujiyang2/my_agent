@@ -1,6 +1,7 @@
 // src/sandbox/sandbox-manager.ts
 import fs from 'node:fs';
 import path from 'node:path';
+import net from 'node:net';
 import { createPathPolicy } from './path-policy';
 import { isBwrapAvailable, executeInBwrap } from './bwrap-executor';
 import { isDockerCommand, createDockerValidator } from './docker-validator';
@@ -27,6 +28,8 @@ export interface SandboxManager {
   registerWritable(filePath: string): { ok: boolean; error?: string };
   unregisterWritable(filePath: string): void;
   getStatus(): SandboxStatus;
+  /** Stop the proxy server and clean up resources */
+  destroy(): Promise<void>;
 }
 
 function isSocatAvailable(): boolean {
@@ -36,6 +39,19 @@ function isSocatAvailable(): boolean {
   } catch {
     return false;
   }
+}
+
+/** Find a free TCP port on localhost for the per-command socat forwarder */
+function findFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer();
+    srv.listen(0, '127.0.0.1', () => {
+      const addr = srv.address();
+      const port = typeof addr === 'object' && addr !== null ? addr.port : 0;
+      srv.close(() => resolve(port));
+    });
+    srv.on('error', reject);
+  });
 }
 
 export function createSandboxManager(config: SandboxConfig): SandboxManager {
@@ -124,7 +140,9 @@ export function createSandboxManager(config: SandboxConfig): SandboxManager {
         return executeDirect(command, options);
       }
 
-      return executeInBwrap(command, policy, options);
+      // Assign a unique port for the per-command socat forwarder
+      const proxyPort = await findFreePort();
+      return executeInBwrap(command, policy, { ...options, proxyPort });
     },
 
     registerWritable(filePath: string): { ok: boolean; error?: string } {
@@ -162,6 +180,11 @@ export function createSandboxManager(config: SandboxConfig): SandboxManager {
         writablePaths: policy.getWritablePaths(),
         protectPaths: policy.getProtectPaths(),
       };
+    },
+
+    async destroy(): Promise<void> {
+      await proxyPromise;
+      await proxy.stop();
     },
   };
 }
