@@ -30,13 +30,53 @@ function isBwrapAvailable(): boolean {
 }
 
 /**
+ * Fix DNS resolution for containers running in a new network namespace.
+ *
+ * When the host uses systemd-resolved, /etc/resolv.conf contains
+ * `nameserver 127.0.0.53` which is unreachable from inside a netns.
+ * We detect this case and provide a replacement resolv.conf that
+ * uses either systemd-resolved's upstream stub or public DNS servers.
+ *
+ * @param resolvConfPath — path to the host's resolv.conf (overridable for testing)
+ * @returns path to the replacement resolv.conf, or null if no fix is needed
+ */
+function fixResolvConf(resolvConfPath?: string): string | null {
+  try {
+    const resolvedPath = resolvConfPath ?? '/etc/resolv.conf';
+    const content = fs.readFileSync(resolvedPath, 'utf-8');
+    const hasLocalResolver = /^nameserver\s+127\./m.test(content);
+    if (!hasLocalResolver) return null;
+
+    // Try systemd-resolved's stub file first
+    const resolvedStub = '/run/systemd/resolve/resolv.conf';
+    if (fs.existsSync(resolvedStub)) {
+      return resolvedStub;
+    }
+
+    // Fallback: generate a fixed resolv.conf with public DNS
+    const fixed = 'nameserver 8.8.8.8\nnameserver 114.114.114.114\n';
+    const tmpPath = '/tmp/my-agent-resolv.conf';
+    fs.writeFileSync(tmpPath, fixed);
+    return tmpPath;
+  } catch {
+    return null;
+  }
+}
+
+export interface BuildBwrapOptions {
+  /** Override path to resolv.conf for testing */
+  resolvConfPath?: string;
+}
+
+/**
  * Build the bwrap shell command array.
  * Complex commands (containing quotes, pipes, redirects, etc.) are
  * wrapped in `sh -c` to ensure proper shell interpretation.
  */
 function buildBwrapCommand(
   command: string,
-  policy: PathPolicy
+  policy: PathPolicy,
+  options?: BuildBwrapOptions
 ): string[] {
   const args: string[] = ['bwrap'];
 
@@ -62,9 +102,17 @@ function buildBwrapCommand(
     args.push('--bind', wp, wp);
   }
 
+  // Fix DNS for systemd-resolved (127.0.0.53 unreachable in new netns)
+  const resolvConfFix = fixResolvConf(options?.resolvConfPath);
+
   // Process isolation, share network
   args.push('--unshare-pid');
   args.push('--share-net');
+
+  // Override resolv.conf if DNS fix was applied
+  if (resolvConfFix) {
+    args.push('--bind', resolvConfFix, '/etc/resolv.conf');
+  }
 
   // Separator and target command
   args.push('--');
@@ -163,4 +211,5 @@ function executeInBwrap(
   }
 }
 
-export { findBwrap, isBwrapAvailable, buildBwrapCommand, executeInBwrap };
+export { findBwrap, isBwrapAvailable, fixResolvConf, buildBwrapCommand, executeInBwrap };
+export type { BuildBwrapOptions };
