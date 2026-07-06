@@ -29,6 +29,7 @@ function mockContext(): CommandContext {
         },
         ui: {
             async prompt() { return ''; },
+            write() {},
         },
     };
 }

@@ -32,6 +32,7 @@ function mockCtx(overrides?: Partial<CommandContext>): CommandContext {
         },
         ui: {
             async prompt() { return ''; },
+            write() {},
         },
         ...overrides,
     };

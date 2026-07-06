@@ -89,6 +89,7 @@ describe('/rewind', () => {
             },
             ui: {
                 async prompt() { return ''; },
+            write() {},
             },
             ...overrides,
         };
@@ -127,6 +128,7 @@ describe('/rewind', () => {
             },
             ui: {
                 async prompt() { return '2'; },
+                write() {},
             },
             output: {
                 info: vi.fn(),
@@ -153,6 +155,7 @@ describe('/rewind', () => {
             },
             ui: {
                 async prompt() { return '99'; },
+                write() {},
             },
             output: { error, info: vi.fn() },
         });
@@ -174,6 +177,7 @@ describe('/rewind', () => {
             },
             ui: {
                 async prompt() { return 'abc'; },
+                write() {},
             },
             output: { error, info: vi.fn() },
         });

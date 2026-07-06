@@ -29,6 +29,7 @@ function mockContext(overrides?: Partial<CommandContext>): CommandContext {
         },
         ui: {
             async prompt() { return ''; },
+            write() {},
         },
         ...overrides,
     };

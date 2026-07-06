@@ -12,6 +12,8 @@ export interface CommandContext {
     ui: {
         /** Ask the user a question and return their answer. */
         prompt(text: string): Promise<string>;
+        /** Pre-fill the input line (for /rewind to show the rewound-to message). */
+        write(text: string): void;
     };
 }
 

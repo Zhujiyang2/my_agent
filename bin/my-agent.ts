@@ -143,6 +143,9 @@ async function main(): Promise<void> {
           new Promise<string>((resolve) => {
             rl.question(text, resolve);
           }),
+        write: (text: string) => {
+          rl.write(text);
+        },
       },
     };
 

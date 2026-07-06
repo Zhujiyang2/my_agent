@@ -88,6 +88,8 @@ export const rewindCommand: Command = {
         // so the user can re-ask or the agent will re-respond.
         ctx.contextManager.truncateTo(targetTurn.startIndex + 1);
         ctx.output.info(`Rewound to just after: "${targetTurn.userPreview}"`);
+        // Pre-fill the input line with the rewound-to message
+        ctx.ui.write(targetTurn.userPreview);
         return { type: 'handled' };
     },
 };
