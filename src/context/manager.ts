@@ -190,7 +190,7 @@ export function createContextManager(config: ContextConfig, model = 'gpt-4o', me
         round: number;
         pinned: boolean;
     }> {
-        return flow;
+        return [...flow];
     }
 
     function cancelAll(): void {
