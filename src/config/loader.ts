@@ -43,6 +43,7 @@ export function loadConfig(filePath?: string): Config {
   const contextCfg = (cfg.context as Record<string, unknown> | undefined) ?? {};
   const subagentCfg = (cfg.subagent as Record<string, unknown> | undefined) ?? {};
   const memoryCfg = (cfg.memory as Record<string, unknown> | undefined) ?? {};
+  const sandboxCfg = (cfg.sandbox as Record<string, unknown> | undefined) ?? {};
 
   return {
     api_url: validateStringField('api_url'),
@@ -77,6 +78,16 @@ export function loadConfig(filePath?: string): Config {
       user_budget: typeof memoryCfg.user_budget === 'number' ? memoryCfg.user_budget : 4000,
       agent_budget: typeof memoryCfg.agent_budget === 'number' ? memoryCfg.agent_budget : 2000,
       compress_threshold: typeof memoryCfg.compress_threshold === 'number' ? memoryCfg.compress_threshold : 5,
+    },
+    sandbox: {
+      enabled: typeof sandboxCfg.enabled === 'boolean' ? sandboxCfg.enabled : true,
+      engine: (sandboxCfg.engine === 'bwrap' ? 'bwrap' : 'bwrap'),
+      extra_protect_paths:
+        Array.isArray(sandboxCfg.extra_protect_paths)
+          ? sandboxCfg.extra_protect_paths.filter((p): p is string => typeof p === 'string')
+          : [],
+      fallback_to_warn:
+        typeof sandboxCfg.fallback_to_warn === 'boolean' ? sandboxCfg.fallback_to_warn : true,
     },
   };
 }

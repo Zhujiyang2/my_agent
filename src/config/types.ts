@@ -26,6 +26,13 @@ export interface MemoryConfig {
   compress_threshold: number;
 }
 
+export interface SandboxConfig {
+  enabled: boolean;
+  engine: 'bwrap';
+  extra_protect_paths: string[];
+  fallback_to_warn: boolean;
+}
+
 export interface Config {
   api_url: string;
   model: string;
@@ -34,4 +41,5 @@ export interface Config {
   context: ContextConfig;
   subagent: SubagentConfig;
   memory: MemoryConfig;
+  sandbox: SandboxConfig;
 }
