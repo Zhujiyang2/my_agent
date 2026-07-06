@@ -84,8 +84,10 @@ export const rewindCommand: Command = {
             return { type: 'handled' };
         }
 
-        ctx.contextManager.truncateTo(targetTurn.endIndex + 1);
-        ctx.output.info(`Rewound to turn ${targetRound}: "${targetTurn.userPreview}"`);
+        // Keep only up to the user message (not the assistant response),
+        // so the user can re-ask or the agent will re-respond.
+        ctx.contextManager.truncateTo(targetTurn.startIndex + 1);
+        ctx.output.info(`Rewound to just after: "${targetTurn.userPreview}"`);
         return { type: 'handled' };
     },
 };

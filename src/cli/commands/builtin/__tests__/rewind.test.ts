@@ -136,8 +136,8 @@ describe('/rewind', () => {
 
         await rewindCommand.execute(ctx, '/rewind');
 
-        // Turn 2: startIndex=2, endIndex=3. truncate to endIndex+1 = 4
-        expect(truncateTo).toHaveBeenCalledWith(4);
+        // Turn 2: startIndex=2. truncate to startIndex+1 = 3 (keep user msg, drop assistant)
+        expect(truncateTo).toHaveBeenCalledWith(3);
     });
 
     it('shows error for invalid turn number', async () => {
