@@ -15,6 +15,8 @@
 
 Tavily 搜索/网页抓取由 MCP 工具在沙箱外完成，不需要沙箱内直接访问任意外网。
 
+**注意**：`docker pull` 实际流程是 Docker CLI → Unix socket → **宿主机 daemon** → 外网拉镜像。沙箱内的 CLI 只发指令，真正出站的是宿主机 daemon。因此 Docker 操作**完全不受 `--unshare-net` 影响**，白名单中的 Docker registry 域名为冗余保护（daemon 层面也可配置镜像代理）。
+
 **目标**：将沙箱从 `--share-net` 改为 `--unshare-net` + 域名白名单代理，在保留必要网络能力的同时防止 prompt injection 导致的数据外传。
 
 ## 2. 架构
@@ -86,22 +88,26 @@ export interface AccessLogEntry {
 在现有 bwrap 命令构造中：
 
 1. `--share-net` → `--unshare-net`
-2. 新增 `--bind /tmp/my-agent-proxy.sock /tmp/my-agent-proxy.sock`（透传代理 socket）
-3. 命令包装：在目标命令前启动 socat 转发，注入代理环境变量
+2. 检测并修复 DNS（见 3.5），必要时生成 `/tmp/my-agent-resolv.conf` 并追加 `--bind`
+3. 新增 `--bind /tmp/my-agent-proxy.sock /tmp/my-agent-proxy.sock`（透传代理 socket）
+4. 命令包装：在目标命令前启动 socat 转发，注入代理环境变量
 
 包装后的命令结构：
 
 ```
 sh -c '
+  cleanup() { kill $SOCAT_PID 2>/dev/null; }
+  trap cleanup EXIT INT TERM
   socat TCP-LISTEN:19877,fork,reuseaddr UNIX-CONNECT:/tmp/my-agent-proxy.sock &
   SOCAT_PID=$!
+  sleep 0.1   # socat 在 1-5ms 内开始监听，100ms 有充足余量
   export HTTP_PROXY=http://127.0.0.1:19877
   export HTTPS_PROXY=http://127.0.0.1:19877
   export http_proxy=http://127.0.0.1:19877
   export https_proxy=http://127.0.0.1:19877
   <原始命令>
   EXIT_CODE=$?
-  kill $SOCAT_PID 2>/dev/null
+  cleanup
   exit $EXIT_CODE
 '
 ```
@@ -127,7 +133,21 @@ export function loadSandboxDomains(filePath?: string): SandboxDomainsConfig
 - 文件不存在时返回空配置
 - 格式错误时打印警告并返回空配置
 
-### 3.5 如果 socat 不可用
+### 3.5 DNS 解析处理
+
+`--unshare-net` 创建新网络命名空间后，如果宿主机使用 `systemd-resolved`（Ubuntu/Debian 默认），`/etc/resolv.conf` 指向 `127.0.0.53`，在新 netns 中此地址不可达，DNS 解析会失败。
+
+处理方式：在 `buildBwrapCommand` 中，构造 bwrap 参数之前：
+
+1. 读取 `/etc/resolv.conf`
+2. 如果 `nameserver` 指向 `127.x.x.x`（不可达的本地 DNS），创建修复版 `/tmp/my-agent-resolv.conf`：
+   - 优先从 `/run/systemd/resolve/resolv.conf` 获取真实 DNS
+   - 回退用公共 DNS：`8.8.8.8`、`114.114.114.114`
+3. 在 bwrap 参数中追加 `--bind /tmp/my-agent-resolv.conf /etc/resolv.conf`
+
+这样在 `--ro-bind / /` 之后，用 `--bind` 覆盖 `/etc/resolv.conf`（bwrap 后绑定的优先级更高）。
+
+### 3.6 如果 socat 不可用
 
 - 启动时检测 `socat` 可用性
 - 如果 socat 不存在且 `fallback_to_warn: true`：回退到 `--share-net` + 警告
@@ -210,4 +230,5 @@ registry.npmjs.org
 | 白名单不完整导致训推任务中断 | 用户可通过 `extra_allowed_domains` 追加；错误日志明确指出被拒域名 |
 | prompt injection 通过 Tavily MCP 外传数据 | Tavily 在沙箱外运行，不受网络限制影响；文件系统保护（protect 列表）阻止读取凭证文件 |
 | 代理进程崩溃 | sandbox-manager 在 execute 前检查代理是否存活，不可用时回退 |
-| DNS 泄露（域名解析） | 不在本阶段处理——bwrap 默认继承宿主机 /etc/resolv.conf，DNS 查询走宿主机 |
+| DNS 不可达（systemd-resolved 指向 127.0.0.53） | 检测并生成修复版 resolv.conf，通过 `--bind` 覆盖；回退到公共 DNS |
+| DNS 泄露（域名解析） | 不在本阶段处理——DNS 查询走宿主机配置，可被监控但不可被沙箱内篡改 |
