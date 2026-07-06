@@ -42,6 +42,12 @@ export function createPathPolicy(
 
   function isSystemCritical(filePath: string): boolean {
     const resolved = path.resolve(filePath);
+
+    // Block the filesystem root (e.g. / on Linux, C:\ on Windows)
+    if (resolved === path.parse(resolved).root) {
+      return true;
+    }
+
     return SYSTEM_CRITICAL_PREFIXES.some(
       (prefix) => {
         const resolvedPrefix = path.resolve(prefix);

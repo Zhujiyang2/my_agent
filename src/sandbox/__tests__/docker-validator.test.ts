@@ -13,6 +13,24 @@ describe('isDockerCommand', () => {
     expect(isDockerCommand('docker create --name test ubuntu')).toBe(true);
   });
 
+  it('detects sudo docker run', () => {
+    expect(isDockerCommand('sudo docker run hello-world')).toBe(true);
+  });
+
+  it('detects full-path /usr/bin/docker run', () => {
+    expect(isDockerCommand('/usr/bin/docker run hello-world')).toBe(true);
+  });
+
+  it('detects env-prefixed docker run', () => {
+    expect(isDockerCommand('env VAR=val docker run hello-world')).toBe(true);
+  });
+
+  it('returns false for compound commands where docker is not the first subcommand', () => {
+    // "docker images; docker run ..." — the whole string must be checked,
+    // but the validator should at minimum handle common prefixes
+    expect(isDockerCommand('docker images; docker run -v /etc/shadow:/shadow ubuntu')).toBe(false);
+  });
+
   it('returns false for non-docker commands', () => {
     expect(isDockerCommand('echo hello')).toBe(false);
     expect(isDockerCommand('ls -la')).toBe(false);
@@ -75,6 +93,53 @@ describe('parseVolumeMounts', () => {
     const mounts = parseVolumeMounts('docker run ubuntu echo hello');
     expect(mounts).toHaveLength(0);
   });
+
+  it('parses -v without space: -v/host:/container', () => {
+    const mounts = parseVolumeMounts('docker run -v/data:/data ubuntu');
+    expect(mounts).toHaveLength(1);
+    expect(mounts[0]).toMatchObject({ hostPath: '/data', containerPath: '/data' });
+  });
+
+  it('parses --volume= with equals sign', () => {
+    const mounts = parseVolumeMounts(
+      'docker run --volume=/data:/data:ro ubuntu'
+    );
+    expect(mounts).toHaveLength(1);
+    expect(mounts[0].hostPath).toBe('/data');
+    expect(mounts[0].mode).toBe('ro');
+  });
+
+  it('parses --mount= with equals sign', () => {
+    const mounts = parseVolumeMounts(
+      'docker run --mount=type=bind,source=/src,target=/dst ubuntu'
+    );
+    expect(mounts).toHaveLength(1);
+    expect(mounts[0].hostPath).toBe('/src');
+  });
+
+  it('parses --mount with src= alias', () => {
+    const mounts = parseVolumeMounts(
+      'docker run --mount type=bind,src=/src,target=/dst ubuntu'
+    );
+    expect(mounts).toHaveLength(1);
+    expect(mounts[0].hostPath).toBe('/src');
+  });
+
+  it('parses --mount with dst= alias', () => {
+    const mounts = parseVolumeMounts(
+      'docker run --mount type=bind,source=/src,dst=/dst ubuntu'
+    );
+    expect(mounts).toHaveLength(1);
+    expect(mounts[0].containerPath).toBe('/dst');
+  });
+
+  it('parses --mount with destination= alias', () => {
+    const mounts = parseVolumeMounts(
+      'docker run --mount type=bind,source=/src,destination=/dst ubuntu'
+    );
+    expect(mounts).toHaveLength(1);
+    expect(mounts[0].containerPath).toBe('/dst');
+  });
 });
 
 describe('createDockerValidator', () => {
@@ -130,5 +195,33 @@ describe('createDockerValidator', () => {
     expect(result.ok).toBe(false);
     expect(result.blocked).toHaveLength(2);
     expect(result.blocked[0].reason).toBeTruthy();
+  });
+
+  it('blocks protect paths via sudo docker', () => {
+    const result = validator.validate(
+      'sudo docker run -v /etc/shadow:/shadow ubuntu'
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  it('blocks protect paths via --volume= syntax', () => {
+    const result = validator.validate(
+      'docker run --volume=/etc/shadow:/shadow ubuntu'
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  it('blocks protect paths via --mount= syntax', () => {
+    const result = validator.validate(
+      'docker run --mount=type=bind,src=/etc/shadow,target=/shadow ubuntu'
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  it('blocks protect paths via --mount with src/dst aliases', () => {
+    const result = validator.validate(
+      'docker run --mount type=bind,src=/etc/shadow,dst=/shadow ubuntu'
+    );
+    expect(result.ok).toBe(false);
   });
 });

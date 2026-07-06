@@ -117,6 +117,12 @@ describe('createPathPolicy', () => {
       expect(result.ok).toBe(false);
       expect(result.error).toContain('protected');
     });
+
+    it('rejects root path /', () => {
+      const result = policy.registerWritable('/');
+      expect(result.ok).toBe(false);
+      expect(result.error).toContain('system-critical');
+    });
   });
 
   describe('unregisterWritable', () => {

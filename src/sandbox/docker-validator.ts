@@ -16,7 +16,9 @@ const SYSTEM_COMMON_READONLY_PREFIXES = [
 
 function isDockerCommand(command: string): boolean {
   const trimmed = command.trimStart();
-  return /^docker\s+(run|create)\b/.test(trimmed);
+  // Match docker run/create as a standalone word (handles sudo, /usr/bin/, env prefixes).
+  // But exclude compound commands like "docker images; docker run ..."
+  return /\bdocker\s+(run|create)\b/.test(trimmed) && !/[;&|]/.test(trimmed);
 }
 
 interface VolumeMount {
@@ -28,9 +30,10 @@ interface VolumeMount {
 function parseVolumeMounts(command: string): VolumeMount[] {
   const mounts: VolumeMount[] = [];
 
-  // Match -v / --volume flags
-  // Pattern: -v HOST:CONTAINER[:MODE] or --volume HOST:CONTAINER[:MODE]
-  const vPattern = /(?:-v|--volume)\s+(\S+?):(\S+?)(?::(ro|rw|z|Z))?(?:\s|$)/g;
+  // Match -v / --volume flags (with or without space after flag)
+  // Pattern: -v HOST:CONTAINER[:MODE] or -v/HOST:CONTAINER[:MODE]
+  // Also: --volume HOST:CONTAINER[:MODE] or --volume=HOST:CONTAINER[:MODE]
+  const vPattern = /(?:-v|--volume)[\s=]?(\S+?):(\S+?)(?::(ro|rw|z|Z))?(?:\s|$)/g;
   let match;
   while ((match = vPattern.exec(command)) !== null) {
     mounts.push({
@@ -40,15 +43,18 @@ function parseVolumeMounts(command: string): VolumeMount[] {
     });
   }
 
-  // Match --mount flags
-  // Pattern: --mount type=bind,source=SRC,target=DST[,readonly]
-  const mountPattern = /--mount\s+([^-\s]\S*)/g;
+  // Match --mount flags (with or without space/equals after flag)
+  // Pattern: --mount type=bind,... or --mount=type=bind,...
+  // Supports source=/src=/dst=/destination= aliases
+  const mountPattern = /--mount[\s=]?([^-\s]\S*)/g;
   while ((match = mountPattern.exec(command)) !== null) {
     const opts = match[1];
     if (!opts.includes('type=bind') && !opts.startsWith('type=bind')) continue;
 
-    const srcMatch = opts.match(/(?:^|,)source=([^,]+)/);
-    const dstMatch = opts.match(/(?:^|,)target=([^,]+)/);
+    // Source: "source=" or "src="
+    const srcMatch = opts.match(/(?:^|,)(?:source|src)=([^,]+)/);
+    // Target: "target=" or "dst=" or "destination="
+    const dstMatch = opts.match(/(?:^|,)(?:target|dst|destination)=([^,]+)/);
     const roMatch = /\breadonly\b/.test(opts);
 
     if (srcMatch && dstMatch) {

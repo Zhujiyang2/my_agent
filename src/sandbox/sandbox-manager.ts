@@ -61,10 +61,20 @@ export function createSandboxManager(config: SandboxConfig): SandboxManager {
         }
       }
 
-      // If bwrap is unavailable, fall back
+      // If bwrap is unavailable, fall back to direct execution
       if (!bwrapAvailable) {
         if (config.fallback_to_warn) {
-          return executeInBwrap(command, policy, options);
+          const result = executeDirect(command, options);
+          result.content =
+            '[SANDBOX WARNING] bwrap is not available on this system. ' +
+            'Command executed without filesystem isolation.\n' +
+            'Install bubblewrap: apt install bubblewrap / dnf install bubblewrap\n\n' +
+            result.content;
+          result.summary = 'sandbox=warn | ' + result.summary;
+          result.keyOutput = result.keyOutput
+            ? 'bwrap not available — running without sandbox\n' + result.keyOutput
+            : 'bwrap not available — running without sandbox';
+          return result;
         }
         return executeDirect(command, options);
       }
@@ -119,6 +129,9 @@ function executeDirect(
       timeout: options?.timeout ?? 60_000,
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'pipe'],
+      shell: process.platform === 'win32'
+        ? (process.env.ComSpec || 'cmd.exe')
+        : (process.env.SHELL || '/bin/sh'),
     });
     const trimmed = stdout.trim();
     return {
