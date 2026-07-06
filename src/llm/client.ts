@@ -60,7 +60,7 @@ export async function chatStream(
   let totalBytes = 0;
   while (true) {
     const { done, value } = await reader.read();
-    if (done) { process.stderr.write(`[api] reader done, chunks=${chunks} totalBytes=${totalBytes}\n`); break; }
+    if (done) break;
 
     chunks++;
     totalBytes += value.length;
@@ -125,6 +125,6 @@ export async function chatStream(
     .sort(([a], [b]) => a - b)
     .map(([, tc]) => tc);
 
-  process.stderr.write(`[api] result content_len=${content.length} tool_calls=${toolCalls.length} finish=${finishReason}\n`);
+  process.stderr.write(`[api] result content_len=${content.length} tool_calls=${toolCalls.length} finish=${finishReason} chunks=${chunks} bytes=${totalBytes}\n`);
   return { finishReason, content, toolCalls };
 }
