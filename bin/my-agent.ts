@@ -137,7 +137,7 @@ async function main(): Promise<void> {
   }
 
   // Load skills from project directory
-  loadSkills(path.join(process.cwd(), '.my-agent', 'skills'));
+  loadSkills(path.join(process.cwd(), 'skills'));
 
   // Set up safety confirmation — must be after rl creation
   setExecutorCallbacks({
