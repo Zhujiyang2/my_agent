@@ -221,6 +221,60 @@ describe('loadSkills', () => {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('scans .md files inside subdirectories (skills/<name>/<name>.md)', () => {
+    const dir = createTempDir();
+    try {
+      const subDir = path.join(dir, 'my-skill');
+      fs.mkdirSync(subDir);
+      writeSkillFile(subDir, 'my-skill.md', 'my-skill', 'A subdirectory skill');
+
+      loadSkills(dir);
+
+      const tool = defaultRegistry.get('Skill');
+      expect(tool).toBeDefined();
+      expect(tool!.parameters.properties.name.enum).toEqual(['my-skill']);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('mixes top-level .md files and subdirectory skills', () => {
+    const dir = createTempDir();
+    try {
+      writeSkillFile(dir, 'legacy.md', 'legacy', 'A top-level skill');
+      const subDir = path.join(dir, 'new-skill');
+      fs.mkdirSync(subDir);
+      writeSkillFile(subDir, 'new-skill.md', 'new-skill', 'A subdirectory skill');
+
+      loadSkills(dir);
+
+      const tool = defaultRegistry.get('Skill');
+      expect(tool).toBeDefined();
+      expect(tool!.parameters.properties.name.enum).toEqual(['legacy', 'new-skill']);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('ignores non-.md files in subdirectories', () => {
+    const dir = createTempDir();
+    try {
+      const subDir = path.join(dir, 'my-skill');
+      fs.mkdirSync(subDir);
+      writeSkillFile(subDir, 'my-skill.md', 'my-skill', 'A skill');
+      fs.writeFileSync(path.join(subDir, 'script.sh'), '#!/bin/bash\necho hello', 'utf-8');
+      fs.writeFileSync(path.join(subDir, 'config.json'), '{}', 'utf-8');
+
+      loadSkills(dir);
+
+      const tool = defaultRegistry.get('Skill');
+      expect(tool).toBeDefined();
+      expect(tool!.parameters.properties.name.enum).toEqual(['my-skill']);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('Skill tool handler', () => {

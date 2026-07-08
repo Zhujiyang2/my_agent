@@ -59,9 +59,9 @@ function scanSkills(skillsDir: string): Map<string, SkillMeta> {
   }
   if (!stat.isDirectory()) return skills;
 
-  let files: string[];
+  let entries: string[];
   try {
-    files = fs.readdirSync(skillsDir);
+    entries = fs.readdirSync(skillsDir);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(`[skills] Cannot read directory ${skillsDir}: ${msg}`);
@@ -69,24 +69,51 @@ function scanSkills(skillsDir: string): Map<string, SkillMeta> {
   }
 
   // Sort for deterministic ordering across platforms
-  files.sort();
+  entries.sort();
 
-  for (const file of files) {
-    if (!file.toLowerCase().endsWith('.md')) continue;
-
-    const filePath = path.join(skillsDir, file);
-    const skill = parseFrontmatter(filePath);
-
-    if (!skill) {
-      console.warn(`[skills] Skipping ${file}: invalid or missing frontmatter (name + description required)`);
+  for (const entry of entries) {
+    const entryPath = path.join(skillsDir, entry);
+    let entryStat: fs.Stats;
+    try {
+      entryStat = fs.statSync(entryPath);
+    } catch {
       continue;
     }
 
-    if (skills.has(skill.name)) {
-      console.warn(`[skills] Duplicate skill name "${skill.name}" — overriding with ${file}`);
+    if (entryStat.isDirectory()) {
+      // Skill directory: skills/<skill-name>/ — scan for .md files inside
+      let subFiles: string[];
+      try {
+        subFiles = fs.readdirSync(entryPath);
+      } catch {
+        continue;
+      }
+      subFiles.sort();
+      for (const subFile of subFiles) {
+        if (!subFile.toLowerCase().endsWith('.md')) continue;
+        const filePath = path.join(entryPath, subFile);
+        const skill = parseFrontmatter(filePath);
+        if (!skill) {
+          console.warn(`[skills] Skipping ${entry}/${subFile}: invalid or missing frontmatter`);
+          continue;
+        }
+        if (skills.has(skill.name)) {
+          console.warn(`[skills] Duplicate skill name "${skill.name}" — overriding with ${entry}/${subFile}`);
+        }
+        skills.set(skill.name, skill);
+      }
+    } else if (entryStat.isFile() && entry.toLowerCase().endsWith('.md')) {
+      // Top-level .md file (backward-compatible)
+      const skill = parseFrontmatter(entryPath);
+      if (!skill) {
+        console.warn(`[skills] Skipping ${entry}: invalid or missing frontmatter`);
+        continue;
+      }
+      if (skills.has(skill.name)) {
+        console.warn(`[skills] Duplicate skill name "${skill.name}" — overriding with ${entry}`);
+      }
+      skills.set(skill.name, skill);
     }
-
-    skills.set(skill.name, skill);
   }
 
   return skills;
