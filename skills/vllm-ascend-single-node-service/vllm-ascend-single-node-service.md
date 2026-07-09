@@ -59,36 +59,30 @@ npu-smi info -t board -i 0 2>/dev/null | grep -i "Chip Count" || echo "0"
 
 ### Phase 3: 查阅部署指导
 
-模型特定的启动命令和参数通常记录在 `/vllm-workspace` 下。
+镜像内的 `/vllm-workspace` 目录通常包含 vllm 和 vllm-ascend 的开源代码仓。模型特定的部署指导（README、部署文档、Dockerfile、启动脚本等）就在其中。
 
-1. 从镜像中提取部署指导：
+1. **探索代码仓**：启动一个临时容器（不做推理），用 `docker exec` 或 `docker run --rm` 浏览 `/vllm-workspace` 的目录结构，找到与当前模型部署相关的文档和脚本。
 
-```bash
-docker run --rm --entrypoint "" <image>:<tag> cat /vllm-workspace/README.md
-```
+   常用的探索方式：
+   ```bash
+   # 列出 /vllm-workspace 顶层结构
+   docker run --rm --entrypoint "" <image>:<tag> ls /vllm-workspace/
 
-若 README.md 不存在，尝试列出目录：
+   # 或启动临时容器深入查看
+   docker run -d --name vllm-temp-inspect --entrypoint "sleep" <image>:<tag> infinity
+   docker exec vllm-temp-inspect find /vllm-workspace -name "*.md" -o -name "*.sh" | head -20
+   docker rm -f vllm-temp-inspect
+   ```
 
-```bash
-docker run --rm --entrypoint "" <image>:<tag> ls /vllm-workspace/
-```
+2. **自行判断**：根据探索到的文件内容，自行决定需要读取哪些文档。重点关注与模型部署、启动参数、环境变量相关的部分。
 
-2. 如果镜像启动会报错（缺设备等），可用以下方式挂载但不启动：
+3. **镜像内找不到**：若 `/vllm-workspace` 不存在或内容不完整，询问用户是否本地有 vllm-ascend 代码仓可以直接探索。
 
-```bash
-docker run -d --name vllm-temp-inspect --entrypoint "sleep" <image>:<tag> infinity
-docker exec vllm-temp-inspect ls /vllm-workspace/
-docker exec vllm-temp-inspect cat /vllm-workspace/README.md
-docker rm -f vllm-temp-inspect
-```
-
-3. 若镜像内找不到部署指导，询问用户是否本地有 vllm-ascend 代码仓
-
-4. 从部署指导中提取：
-   - vllm serve 命令及其参数
+4. 从部署指导中提取关键信息：
+   - vllm serve 启动命令及参数
    - 模型路径约定
-   - 必需环境变量
-   - 推荐启动参数
+   - 必需的环境变量
+   - 推荐配置
 
 ### Phase 4: 构造并启动容器
 
