@@ -102,11 +102,11 @@ docker run -d \
   --device=/dev/davinci_manager \
   --device=/dev/devmm_svm \
   --device=/dev/hisi_hdc \
-  --device=/dev/davinci0 \
-  --device=/dev/davinci1 \
-  ...（所有 NPU 卡） \
+  --device=/dev/davinci${i} \  # 每张 NPU 卡（循环添加所有卡）
+  ...（所有 NPU 卡遍历完毕） \
   -v /usr/local/Ascend:/usr/local/Ascend:ro \
-  [-v /host/path/models:/data/models:ro] \   # 仅当权重在宿主机
+  # 若模型权重在宿主机，取消下一行的注释：
+  # -v /host/path/models:/data/models:ro \
   <image>:<tag> \
   <vllm serve 启动命令>
 ```
@@ -117,7 +117,7 @@ docker run -d \
 
 ```bash
 # 检查端口是否被占用
-ss -tlnp | grep ":8000 " || echo "port 8000 is free"
+ss -tlnp | awk '$4 ~ /:8000$/' | grep -q . && echo "port 8000 is in use" || echo "port 8000 is free"
 ```
 
 **启动后**：
@@ -138,11 +138,14 @@ for i in $(seq 1 60); do
     echo "Service is ready (health check passed at attempt $i)"
     break
   fi
+  if [ $((i % 10)) -eq 0 ]; then
+    echo "Waiting for service... attempt $i/60"
+  fi
   if [ "$i" -eq 60 ]; then
     echo "Health check timeout after 5 minutes"
     echo "--- Container logs (last 50 lines) ---"
     docker logs --tail 50 vllm-ascend
-    exit 1
+    return 1 2>/dev/null || exit 1
   fi
   sleep 5
 done
