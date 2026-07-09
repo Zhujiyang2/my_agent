@@ -102,8 +102,8 @@ describe('loadConfig', () => {
     });
   });
 
-  it('loads config from default path (~/.my_agent/config.json)', () => {
-    // When no filePath is given, loadConfig uses the real ~/.my_agent/config.json
+  it('loads config from default path (.my_agent/config.json)', () => {
+    // When no filePath is given, loadConfig uses .my_agent/config.json in the project root
     const result = loadConfig();
     expect(result).toHaveProperty('api_url');
     expect(result).toHaveProperty('model');

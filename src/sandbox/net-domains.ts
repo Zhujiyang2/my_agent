@@ -1,7 +1,6 @@
 // src/sandbox/net-domains.ts
 import fs from 'node:fs';
-import path from 'node:path';
-import os from 'node:os';
+import { resolveProjectPath } from '../paths';
 
 export interface SandboxDomainsConfig {
   extra_allowed_domains: string[];
@@ -9,7 +8,7 @@ export interface SandboxDomainsConfig {
 }
 
 export function loadSandboxDomains(filePath?: string): SandboxDomainsConfig {
-  const resolvedPath = filePath ?? path.join(os.homedir(), '.my_agent', 'sandbox-domains.json');
+  const resolvedPath = filePath ?? resolveProjectPath('.my_agent', 'sandbox-domains.json');
 
   if (!fs.existsSync(resolvedPath)) {
     return { extra_allowed_domains: [], blocked_domains: [] };

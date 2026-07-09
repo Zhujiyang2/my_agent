@@ -1,15 +1,15 @@
 // src/config/loader.ts
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import type { Config } from './types';
+import { resolveProjectPath } from '../paths';
 
 export function loadConfig(filePath?: string): Config {
-  const resolvedPath = filePath ?? path.join(os.homedir(), '.my_agent', 'config.json');
+  const resolvedPath = filePath ?? resolveProjectPath('.my_agent', 'config.json');
 
   if (!fs.existsSync(resolvedPath)) {
     throw new Error(
-      `Config file not found: ${resolvedPath}\nPlease create ~/.my_agent/config.json`
+      `Config file not found: ${resolvedPath}\nPlease create .my_agent/config.json in the project root`
     );
   }
 

@@ -99,7 +99,7 @@ async function main(): Promise<void> {
   const subagentManager = new SubagentManager(config);
   setSubagentManager(subagentManager);
 
-  // Initialize MCP manager — loads ~/.my_agent/mcp.json, registers management tools
+  // Initialize MCP manager — loads .my_agent/mcp.json, registers management tools
   const mcpConfig = loadMcpConfig();
   const mcpManager = new MCPManager();
   mcpManager.initialize(mcpConfig);
