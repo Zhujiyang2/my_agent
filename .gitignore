@@ -23,6 +23,8 @@ dist-ssr
 *.sln
 *.sw?
 
+.my_agent/
 .superpowers
 docs/
 output/
+knowledge/

@@ -36,7 +36,7 @@ export function assembleMemory(
           : '';
         userWarnings.push(
           `\x1b[33m⚠ Memory: ${skippedMsg}user memory ${result.usagePercent}% full.\x1b[0m\n` +
-          `  Review and clean up at ~/.my_agent/memory/`
+          `  Review and clean up at .my_agent/memory/`
         );
       }
     }

@@ -1,7 +1,7 @@
 // src/mcp/config.ts
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
+import { resolveProjectPath } from '../paths';
 
 export interface StdioMcpServerConfig {
   transport: 'stdio';
@@ -144,7 +144,7 @@ function isValidStringRecord(value: unknown): value is Record<string, string> {
 }
 
 export function loadMcpConfig(filePath?: string): McpConfig | null {
-  const resolvedPath = filePath ?? path.join(os.homedir(), '.my_agent', 'mcp.json');
+  const resolvedPath = filePath ?? resolveProjectPath('.my_agent', 'mcp.json');
 
   if (!fs.existsSync(resolvedPath)) {
     return null;

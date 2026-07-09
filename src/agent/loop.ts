@@ -13,8 +13,7 @@ import { llmCompact } from '../context/llm-compact';
 import { createMemoryManager } from '../memory/index';
 import { createRememberTool } from '../tools/memory/remember';
 import { createForgetTool } from '../tools/memory/forget';
-import path from 'node:path';
-import os from 'node:os';
+import { resolveProjectPath } from '../paths';
 
 export interface AgentOptions {
     onToken?: (token: string) => void;
@@ -52,7 +51,7 @@ export function createAgent(config: Config, options: AgentOptions = {}): AgentSe
             user_budget: config.memory.user_budget,
             agent_budget: config.memory.agent_budget,
             compress_threshold: config.memory.compress_threshold,
-            memoryDir: path.join(os.homedir(), '.my_agent', 'memory'),
+            memoryDir: resolveProjectPath('.my_agent', 'memory'),
           })
         : undefined;
 
