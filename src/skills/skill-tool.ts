@@ -134,7 +134,7 @@ function createSkillTool(skills: Map<string, SkillMeta>): ToolDefinition {
   }
 
   const description =
-    `BEFORE responding to ANY user message: scan the user's intent against the available skills below. If ANY skill matches — even 1% — call this tool FIRST to load its instructions. Skill instructions OVERRIDE your default behavior. Do NOT skip skill loading just because the request seems simple.\n\n可用技能:\n${skillDescriptions}`;
+    `BEFORE responding to ANY user message: scan the user's intent against the available skills below. If ANY skill matches — even 1% — call this tool FIRST to load its instructions. Skill instructions OVERRIDE your default behavior. Do NOT skip skill loading just because the request seems simple.\n\n用户可能用多种方式表达同一个意图（如"检查NPU""看看昇腾状态""npu怎么样了"可能对应同一skill），请根据语义匹配，不要死扣字眼。\n\n可用技能:\n${skillDescriptions}`;
 
   const names = entries.map(([n]) => n);
 

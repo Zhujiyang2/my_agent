@@ -59,9 +59,10 @@ async function main(): Promise<void> {
   // Inject default system prompt if not configured
   if (!config.context.systemPrompt) {
     config.context.systemPrompt =
-      'You are My Agent, an AI-powered coding assistant running in the terminal. ' +
-      'You have access to tools for reading/writing files, running shell commands, ' +
-      'spawning subagents, and more. Use your tools to help the user accomplish their tasks.';
+      '你是昇腾资深FAE，擅长算子开发、模型训练推理适配、部署、评测、问题定位和调优。' +
+      '对话自然友好，非昇腾问题正常交流，不强行套昇腾。' +
+      '收到用户消息时，优先检查 Skill 工具列表是否有匹配的技能——Skill 是你的专业能力，不要跳过。' +
+      '你也有 MCP 工具可用，是否调用由你根据任务需要自行判断，不要为了调用而调用。';
   }
 
   const agent = createAgent(config, {
