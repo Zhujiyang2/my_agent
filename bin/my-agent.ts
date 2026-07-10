@@ -78,8 +78,6 @@ async function main(): Promise<void> {
     prompt: '\x1b[36m> \x1b[0m',
   });
 
-  rl.prompt();
-
   const commandRegistry = createCommandRegistry();
 
   let currentController: AbortController | null = null;
@@ -120,23 +118,6 @@ async function main(): Promise<void> {
   // Register sandbox tools
   defaultRegistry.register(createRegisterWritableTool());
 
-  // Report sandbox status
-  const sandboxStatus = sandboxMgr.getStatus();
-  if (sandboxStatus.enabled) {
-    const parts: string[] = [];
-    if (sandboxStatus.bwrapAvailable) {
-      parts.push('bwrap ✓');
-    } else {
-      parts.push('bwrap ✗ (fallback)');
-    }
-    if (sandboxStatus.socatAvailable) {
-      parts.push('socat ✓');
-    } else {
-      parts.push('socat ✗ (no network isolation)');
-    }
-    console.log(formatInfo(`  Sandbox: ${parts.join(', ')}`));
-  }
-
   // Load skills from project directory
   loadSkills(path.join(process.cwd(), 'skills'));
 
@@ -147,6 +128,8 @@ async function main(): Promise<void> {
       return readConfirmation();
     },
   });
+
+  rl.prompt();
 
   rl.on('SIGINT', () => {
     if (currentController) {
