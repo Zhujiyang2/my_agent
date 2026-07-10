@@ -71,7 +71,6 @@ export function createSandboxManager(config: SandboxConfig): SandboxManager {
   // Start proxy on creation (fire-and-forget, errors logged)
   let proxyRunning = true;
   const proxyPromise = proxy.start().catch(() => {
-    console.warn('[sandbox] Failed to start proxy server.');
     proxyRunning = false;
   });
 

@@ -8,11 +8,11 @@ export const WELCOME_ART = [
 export function formatWelcome(): string {
   return [
     '\x1b[32m',
-    '  ─── My Agent ───',
+    '  ─── FAE Agent ───',
     '',
     WELCOME_ART,
     '',
-    '  AI-powered coding assistant',
+    '  Your powerful AI assistant',
     '\x1b[0m',
   ].join('\n');
 }
