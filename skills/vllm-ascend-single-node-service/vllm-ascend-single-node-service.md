@@ -44,7 +44,9 @@ description: 单节点vLLM-Ascend推理服务启动 — Docker容器部署、NPU
 
 基于前述信息构造 `docker run -d` 命令（需 `--privileged`）。**启动前将完整命令展示给用户确认**。
 
-端口冲突时自动选择下一个可用端口。启动后立即检查容器是否退出，若 `Exited` 则直接进入 Phase 7。
+端口冲突时自动选择下一个可用端口。容器启动后，立即在后台运行 `docker logs -f <容器名> > ./output/vllm_service_<时间戳>.log 2>&1 &`，持续收集 vLLM 启动日志。
+
+启动后检查容器是否退出，若 `Exited` 则直接进入 Phase 7。
 
 ### Phase 5: 监控服务就绪（从宿主机）
 
