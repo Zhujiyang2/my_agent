@@ -160,26 +160,14 @@ async function main(): Promise<void> {
     });
   });
 
-  // Render Claude Code style frame: top sep → prompt → bottom sep + hints/messages
-  function renderFrame(): void {
-    const topSep = footer.renderSeparator();
-    const bottom = footer.render();
-    const bottomLines = bottom.split('\n').length;
-
-    console.log(topSep);
-    rl.prompt();
-    process.stdout.write('\n' + bottom);
-    // Move cursor back up to prompt line: up (bottomLines + 1 for the \n)
-    process.stdout.write(`\x1b[${bottomLines + 1}A`);
-    // Move cursor to after "> " (column 3, 1-indexed)
-    process.stdout.write('\x1b[3G');
-  }
-
+  // Render frame above prompt: both separators + hints → then prompt at bottom
   function reprompt(): void {
-    renderFrame();
+    console.log(footer.renderSeparator());
+    console.log(footer.render());
+    rl.prompt();
   }
 
-  renderFrame();
+  reprompt();
 
   // Ctrl+O toggles task status-line expand/collapse
   process.stdin.on('keypress', (_ch, key) => {
