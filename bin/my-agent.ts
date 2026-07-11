@@ -35,6 +35,7 @@ import { createRegisterWritableTool } from '../src/tools/sandbox/index.js';
 import { defaultRegistry } from '../src/tools/registry.js';
 import { createTaskRegistry, setTaskRegistry } from '../src/tasks/registry.js';
 import { createStatusLine } from '../src/agent/status-line.js';
+import { createFooter } from '../src/cli/footer.js';
 import { resolveProjectPath } from '../src/paths.js';
 
 const nodeVersion = process.versions.node.split('.').map(Number);
@@ -145,6 +146,22 @@ async function main(): Promise<void> {
   const statusLine = createStatusLine({ intervalMs: 3000 });
   statusLine.start();
 
+  // Initialize footer for job completion messages
+  const footer = createFooter();
+  taskRegistry.onTaskComplete((task) => {
+    const icon = task.status === 'completed' ? '✓' : '✗';
+    const elapsed = ((task.finishedAt! - task.createdAt) / 1000).toFixed(1);
+    const cmd = task.command.length > 60
+      ? task.command.slice(0, 57) + '...'
+      : task.command;
+    footer.upsert({
+      id: task.id,
+      icon,
+      text: `${cmd}: ${task.status} (${elapsed}s)`,
+    });
+  });
+
+  console.log(footer.render());
   rl.prompt();
 
   // Ctrl+O toggles task status-line expand/collapse
@@ -160,6 +177,7 @@ async function main(): Promise<void> {
       currentController = null;
       console.log(formatInfo('\n  Interrupted'));
     }
+    console.log(footer.render());
     rl.prompt();
   });
 
@@ -168,6 +186,7 @@ async function main(): Promise<void> {
 
     const input = line.trim();
     if (!input) {
+      console.log(footer.render());
       rl.prompt();
       return;
     }
@@ -201,6 +220,7 @@ async function main(): Promise<void> {
     }
 
     if (result.action === 'continue') {
+      console.log(footer.render());
       rl.prompt();
       return;
     }
@@ -222,6 +242,7 @@ async function main(): Promise<void> {
       currentController = null;
     }
 
+    console.log(footer.render());
     rl.prompt();
   });
 
