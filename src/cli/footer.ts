@@ -7,6 +7,7 @@ export interface FooterMessage {
 export function createFooter() {
   const messages: FooterMessage[] = [];
   const MAX_MESSAGES = 5;
+  const HINT = '  /exit to quit | Ctrl+C to interrupt | Ctrl+O tasks';
 
   function upsert(msg: FooterMessage): void {
     const idx = messages.findIndex((m) => m.id === msg.id);
@@ -27,20 +28,27 @@ export function createFooter() {
     }
   }
 
+  /** Bottom frame: separator + hints + messages (printed after Enter, before LLM output) */
   function render(): string {
     const width = process.stdout.columns ?? 80;
     const sep = '─'.repeat(width);
 
-    const lines = [sep, sep, '  /exit to quit | Ctrl+C to interrupt | Ctrl+O tasks'];
+    const lines = [sep, HINT];
     for (const msg of messages) {
       lines.push(`${msg.icon} ${msg.text}`);
     }
     return lines.join('\n');
   }
 
+  /** Top separator only (printed before rl.prompt()) */
+  function renderSeparator(): string {
+    const width = process.stdout.columns ?? 80;
+    return '─'.repeat(width);
+  }
+
   function clear(): void {
     messages.length = 0;
   }
 
-  return { upsert, remove, render, clear };
+  return { upsert, remove, render, renderSeparator, clear };
 }

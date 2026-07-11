@@ -8,25 +8,35 @@ describe('createFooter', () => {
     footer = createFooter();
   });
 
+  function mockColumns(cols: number) {
+    vi.stubGlobal('process', {
+      ...process,
+      stdout: { ...process.stdout, columns: cols },
+    });
+  }
+
+  describe('renderSeparator', () => {
+    it('returns a separator line matching terminal width', () => {
+      mockColumns(80);
+      expect(footer.renderSeparator()).toBe('─'.repeat(80));
+    });
+
+    it('uses current terminal width', () => {
+      mockColumns(120);
+      expect(footer.renderSeparator()).toBe('─'.repeat(120));
+    });
+  });
+
   describe('render', () => {
     it('renders separator and hint when no messages', () => {
-      // Mock terminal width to 80
-      vi.stubGlobal('process', {
-        ...process,
-        stdout: { ...process.stdout, columns: 80 },
-      });
-
+      mockColumns(80);
       const result = footer.render();
       expect(result).toContain('─'.repeat(80));
       expect(result).toContain('/exit to quit | Ctrl+C to interrupt | Ctrl+O tasks');
     });
 
-    it('renders a single completed message', () => {
-      vi.stubGlobal('process', {
-        ...process,
-        stdout: { ...process.stdout, columns: 80 },
-      });
-
+    it('renders messages below separator and hint', () => {
+      mockColumns(80);
       footer.upsert({
         id: 'job-test-001',
         icon: '✓',
@@ -34,15 +44,15 @@ describe('createFooter', () => {
       });
 
       const result = footer.render();
-      expect(result).toContain('✓ python train.py: completed (12.3s)');
+      const sepIdx = result.indexOf('─'.repeat(80));
+      const hintIdx = result.indexOf('/exit to quit');
+      const msgIdx = result.indexOf('python train.py');
+      expect(sepIdx).toBeLessThan(hintIdx);
+      expect(hintIdx).toBeLessThan(msgIdx);
     });
 
     it('renders multiple messages in insertion order', () => {
-      vi.stubGlobal('process', {
-        ...process,
-        stdout: { ...process.stdout, columns: 80 },
-      });
-
+      mockColumns(80);
       footer.upsert({ id: 'job-1', icon: '✓', text: 'cmd1: completed (1.0s)' });
       footer.upsert({ id: 'job-2', icon: '✗', text: 'cmd2: failed (2.0s)' });
 
@@ -51,52 +61,30 @@ describe('createFooter', () => {
       const idx2 = result.indexOf('cmd2');
       expect(idx1).toBeLessThan(idx2);
     });
-
-    it('uses current terminal width for separator', () => {
-      vi.stubGlobal('process', {
-        ...process,
-        stdout: { ...process.stdout, columns: 120 },
-      });
-
-      const result = footer.render();
-      expect(result).toContain('─'.repeat(120));
-    });
   });
 
   describe('upsert', () => {
     it('deduplicates by id — replaces existing message', () => {
-      vi.stubGlobal('process', {
-        ...process,
-        stdout: { ...process.stdout, columns: 80 },
-      });
-
+      mockColumns(80);
       footer.upsert({ id: 'job-1', icon: '⚡', text: 'cmd: running...' });
       footer.upsert({ id: 'job-1', icon: '✓', text: 'cmd: completed (5.0s)' });
 
       const result = footer.render();
-      // Should only appear once, with the updated text
       expect(result).toContain('✓ cmd: completed (5.0s)');
       expect(result).not.toContain('running...');
-      // Count occurrences of 'cmd:' — should be exactly 1
       const matches = result.match(/cmd:/g);
       expect(matches).toHaveLength(1);
     });
 
     it('keeps at most 5 messages, dropping oldest', () => {
-      vi.stubGlobal('process', {
-        ...process,
-        stdout: { ...process.stdout, columns: 80 },
-      });
-
+      mockColumns(80);
       for (let i = 1; i <= 7; i++) {
         footer.upsert({ id: `job-${i}`, icon: '✓', text: `cmd${i}: completed` });
       }
 
       const result = footer.render();
-      // job-1 and job-2 should be dropped
       expect(result).not.toContain('cmd1');
       expect(result).not.toContain('cmd2');
-      // job-3 through job-7 should be present
       expect(result).toContain('cmd3');
       expect(result).toContain('cmd7');
     });
@@ -104,11 +92,7 @@ describe('createFooter', () => {
 
   describe('remove', () => {
     it('removes a message by id', () => {
-      vi.stubGlobal('process', {
-        ...process,
-        stdout: { ...process.stdout, columns: 80 },
-      });
-
+      mockColumns(80);
       footer.upsert({ id: 'job-1', icon: '✓', text: 'cmd1: completed' });
       footer.upsert({ id: 'job-2', icon: '✓', text: 'cmd2: completed' });
       footer.remove('job-1');
@@ -125,18 +109,15 @@ describe('createFooter', () => {
   });
 
   describe('clear', () => {
-    it('removes all messages', () => {
-      vi.stubGlobal('process', {
-        ...process,
-        stdout: { ...process.stdout, columns: 80 },
-      });
-
+    it('removes all messages but keeps separator and hint', () => {
+      mockColumns(80);
       footer.upsert({ id: 'job-1', icon: '✓', text: 'cmd1: completed' });
       footer.clear();
 
       const result = footer.render();
       expect(result).not.toContain('cmd1');
-      expect(result).toContain('/exit to quit | Ctrl+C to interrupt | Ctrl+O tasks'); // hint still present
+      expect(result).toContain('/exit to quit | Ctrl+C to interrupt | Ctrl+O tasks');
+      expect(result).toContain('─'.repeat(80));
     });
   });
 });
