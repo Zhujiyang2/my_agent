@@ -13,10 +13,15 @@ function generateId(): string {
 
 const ESCALATION_DELAY_MS = 5000;
 
+/** Terminal statuses — exit callback must not overwrite these. */
+const TERMINAL_BY_KILL: ReadonlySet<TaskStatus> = new Set(['killed', 'timeout']);
+
 export function createTaskRegistry(stateDir: string) {
   const tasks = new Map<string, Task>();
   const store = createTaskStore(stateDir);
   const completeCallbacks: Array<(task: Task) => void> = [];
+  // Separate map for non-serializable timer handles (type-safe, no casts)
+  const timeoutTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   async function save(): Promise<void> {
     await store.saveTasks(Array.from(tasks.values()));
@@ -84,13 +89,32 @@ export function createTaskRegistry(stateDir: string) {
 
     tasks.set(id, task);
 
-    // Timeout management
+    // ── tailBuffer: capture live stdout for progress extraction ──
+    // spawnCommand pipes stdout/stderr directly to files via stream.
+    // We add a lightweight memory buffer by reading the file snapshot
+    // periodically via a short interval (first 30s only, to limit overhead).
+    const tailTimer = setInterval(async () => {
+      const t = tasks.get(id);
+      if (!t || t.status !== 'running') {
+        clearInterval(tailTimer);
+        return;
+      }
+      try {
+        const out = await store.readOutput(id, 'stdout', 5);
+        if (out) t.tailBuffer = out;
+      } catch { /* ignore read errors */ }
+    }, 2000);
+    // Stop tail polling after 60s (progress bars are most useful early)
+    setTimeout(() => clearInterval(tailTimer), 60_000);
+
+    // ── Timeout management ──
     if (task.timeoutMs !== null && task.timeoutMs > 0) {
       const timer = setTimeout(() => {
         const t = tasks.get(id);
         if (t && t.status === 'running') {
           killTaskInstance(t, 'SIGTERM');
           t.status = 'timeout';
+          t.signal = 'SIGTERM';
           t.result = {
             exitCode: -1,
             signal: 'SIGTERM',
@@ -101,18 +125,20 @@ export function createTaskRegistry(stateDir: string) {
           };
         }
       }, task.timeoutMs);
-      // Store timer so destroy can clear it
-      (task as Record<string, unknown>)._timeoutTimer = timer;
+      timeoutTimers.set(id, timer);
     }
 
-    // Process exit callback
+    // ── Process exit callback ──
     child.promise.then((result) => {
       const t = tasks.get(id);
       if (!t) return;
 
       // Clear timeout timer
-      const timer = (t as Record<string, unknown>)._timeoutTimer as ReturnType<typeof setTimeout> | undefined;
-      if (timer) clearTimeout(timer);
+      const timer = timeoutTimers.get(id);
+      if (timer) {
+        clearTimeout(timer);
+        timeoutTimers.delete(id);
+      }
 
       // Clear escalation timer
       if (t.escalationTimer !== null) {
@@ -120,26 +146,27 @@ export function createTaskRegistry(stateDir: string) {
         t.escalationTimer = null;
       }
 
-      // Only set status if still running (kill() may have changed it)
+      // Preserve terminal status set by kill() or timeout handler.
+      // Only auto-set completed/failed when status is still 'running'.
       if (t.status === 'running') {
         t.status = result.exitCode === 0 ? 'completed' : 'failed';
       }
-      t.result = result;
-      t.exitCode = result.exitCode;
-      t.signal = result.signal;
+      // Merge per-command result fields, but preserve timeout/kill flags
+      const wasTerminal = TERMINAL_BY_KILL.has(t.status);
+      t.exitCode = wasTerminal ? (t.result?.exitCode ?? result.exitCode) : result.exitCode;
+      t.signal = wasTerminal ? (t.result?.signal ?? result.signal) : result.signal;
       t.finishedAt = Date.now();
+      if (!wasTerminal) {
+        t.result = result;
+      }
+      // Ensure result is always set
+      if (!t.result) t.result = result;
 
       save().catch(() => {});
       for (const cb of completeCallbacks) {
         try { cb(t); } catch { /* ignore */ }
       }
     });
-
-    // tailBuffer: capture stdout data events for live progress
-    // The spawnCommand pipes stdout to file via stream; we don't have
-    // a direct hook. tailBuffer is populated by the caller reading output
-    // files on demand. For live-capture we'd need an additional listener;
-    // that can be added in a follow-up if needed.
 
     return task;
   }
@@ -153,10 +180,9 @@ export function createTaskRegistry(stateDir: string) {
       return false;
     }
 
-    if (signal === 'SIGKILL') {
-      task.status = 'killed';
-      task.signal = signal;
-    }
+    // Mark killed immediately — exit callback will respect this terminal status
+    task.status = 'killed';
+    task.signal = signal;
 
     return true;
   }
@@ -174,10 +200,11 @@ export function createTaskRegistry(stateDir: string) {
     const ok = killTaskInstance(task, signal);
     if (!ok) return false;
 
-    task.signal = signal;
-
     if (signal === 'SIGTERM') {
       task.escalationTimer = setTimeout(() => {
+        const t = tasks.get(id);
+        // Only escalate if task is still running (process hasn't exited yet)
+        if (!t || t.status !== 'running') return;
         try {
           process.kill(task.pid!, 'SIGKILL');
         } catch { /* already dead */ }
@@ -246,7 +273,6 @@ export function createTaskRegistry(stateDir: string) {
 
     for (const [id, task] of tasks) {
       if (!statuses.includes(task.status)) continue;
-      // If finishedAt is null or recent, skip
       if (task.finishedAt !== null && task.finishedAt > cutoff) continue;
       if (task.finishedAt === null && task.createdAt > cutoff) continue;
 
@@ -258,6 +284,7 @@ export function createTaskRegistry(stateDir: string) {
         } catch { /* file doesn't exist */ }
       }
       tasks.delete(id);
+      timeoutTimers.delete(id);
       deleted++;
     }
 
@@ -266,9 +293,11 @@ export function createTaskRegistry(stateDir: string) {
   }
 
   function destroy(): void {
+    for (const [, timer] of timeoutTimers) {
+      clearTimeout(timer);
+    }
+    timeoutTimers.clear();
     for (const [, task] of tasks) {
-      const timer = (task as Record<string, unknown>)._timeoutTimer as ReturnType<typeof setTimeout> | undefined;
-      if (timer) clearTimeout(timer);
       if (task.escalationTimer !== null) clearTimeout(task.escalationTimer);
       if (task.recoveryPollerId !== null) clearInterval(task.recoveryPollerId);
     }
@@ -282,7 +311,6 @@ export function createTaskRegistry(stateDir: string) {
       // Strip non-serializable fields
       task.escalationTimer = null;
       task.recoveryPollerId = null;
-      (task as Record<string, unknown>)._timeoutTimer = undefined;
       tasks.set(task.id, task);
     }
   }

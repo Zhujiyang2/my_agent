@@ -72,7 +72,7 @@ describe('TaskRegistry', () => {
     expect(killed).toBe(true);
     await registry.waitFor(task.id);
     const t = registry.get(task.id)!;
-    expect(['killed', 'failed']).toContain(t.status);
+    expect(t.status).toBe('killed');
   });
 
   it('onTaskComplete callback fires on completion', async () => {
