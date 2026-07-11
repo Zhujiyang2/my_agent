@@ -90,7 +90,9 @@ export function createInputLine(opts: InputLineOpts): InputLine {
       onWrite('\x1b[0J');
     } else {
       // No frame visible (first render, or after LLM output).
-      // Cursor is at end of previous content. Just clear from here down.
+      // Cursor may be mid-line (e.g. after LLM streaming). Force newline
+      // + column 0 so the frame always starts at a clean line boundary.
+      onWrite('\n\r');
       onWrite('\x1b[0J');
     }
 
@@ -149,7 +151,12 @@ export function createInputLine(opts: InputLineOpts): InputLine {
   function submit(): string {
     const submitted = line;
     if (submitted.trim().length > 0) {
-      // Gray background echo — full line width, no separators
+      // Wipe the old frame: move to col 0 of input line, up 1 to top sep,
+      // then clear everything from top sep to end of screen.
+      onWrite('\r');
+      onWrite('\x1b[1A');
+      onWrite('\x1b[0J');
+      // Gray background echo where the frame used to be
       onWrite(`\x1b[48;5;237m\x1b[36m> ${submitted}\x1b[0m\n`);
     }
     line = '';
