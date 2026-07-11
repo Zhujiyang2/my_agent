@@ -82,7 +82,11 @@ export function createStatusLine(opts: StatusLineOptions = {}) {
     const tasks = reg ? reg.list() : [];
     const line = renderStatusLine(tasks);
 
-    // Clear previous status lines using readline (coordinated cursor control)
+    // Save cursor position — stderr shares the terminal cursor with stdout,
+    // so we must restore it after writing to avoid corrupting the frame.
+    output.write('\x1b7');
+
+    // Clear previous status lines
     if (lastLineCount > 0) {
       for (let i = 0; i < lastLineCount; i++) {
         readline.moveCursor(output, 0, -1);
@@ -96,6 +100,9 @@ export function createStatusLine(opts: StatusLineOptions = {}) {
     } else {
       lastLineCount = 0;
     }
+
+    // Restore cursor — return to wherever it was before the status write
+    output.write('\x1b8');
   }
 
   function start(): void {
