@@ -1,5 +1,6 @@
 // src/agent/status-line.ts
 import type { Task } from '../tasks/types';
+import * as readline from 'node:readline';
 import { getTaskRegistry } from '../tasks/registry';
 
 export interface StatusLineOptions {
@@ -81,11 +82,11 @@ export function createStatusLine(opts: StatusLineOptions = {}) {
     const tasks = reg ? reg.list() : [];
     const line = renderStatusLine(tasks);
 
-    // Clear previous status lines
+    // Clear previous status lines using readline (coordinated cursor control)
     if (lastLineCount > 0) {
-      // Move up and clear each line
       for (let i = 0; i < lastLineCount; i++) {
-        output.write('\x1b[1A\x1b[2K');
+        readline.moveCursor(output, 0, -1);
+        readline.clearLine(output, 0);
       }
     }
 
