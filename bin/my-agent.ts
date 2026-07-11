@@ -76,15 +76,15 @@ async function main(): Promise<void> {
     },
   });
 
-  // readline — used only for:
-  //  1. keypress events → forwarded to InputLine
-  //  2. SIGINT / close events
-  //  3. rl.question() for confirmation dialogs
-  // We do NOT use rl.prompt() or rl.on('line') — InputLine owns all rendering.
+  // readline — used ONLY for:
+  //  1. SIGINT / close events
+  //  2. rl.question() for confirmation dialogs
+  // terminal: false prevents readline from touching TTY state —
+  // we manage raw mode and keypress events ourselves via InputLine.
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    terminal: true,
+    terminal: false,
   });
 
   // Enable raw mode + keypress events for InputLine
