@@ -72,6 +72,15 @@ export function createSandboxManager(config: SandboxConfig): SandboxManager {
   });
 
   const socatAvailable = isSocatAvailable();
+  const bwrapAvailable = isBwrapAvailable();
+
+  // Warn once at startup instead of per-command
+  if (!socatAvailable && config.fallback_to_warn) {
+    console.warn('[SANDBOX WARNING] socat is not available — cannot isolate network.');
+  }
+  if (!bwrapAvailable && config.fallback_to_warn) {
+    console.warn('[SANDBOX WARNING] bwrap is not available on this system.');
+  }
 
   // Start proxy on creation (fire-and-forget, errors logged)
   let proxyRunning = true;
@@ -108,25 +117,11 @@ export function createSandboxManager(config: SandboxConfig): SandboxManager {
 
       // Check socat availability for network isolation
       if (!socatAvailable) {
-        if (config.fallback_to_warn) {
-          return {
-            command: `echo '[SANDBOX WARNING] socat is not available — cannot isolate network.' && ${command}`,
-            workdir,
-          };
-        }
         return { command, workdir };
       }
 
       // Check bwrap availability
-      const bwrapAvailable = isBwrapAvailable();
-
       if (!bwrapAvailable) {
-        if (config.fallback_to_warn) {
-          return {
-            command: `echo '[SANDBOX WARNING] bwrap is not available on this system.' && ${command}`,
-            workdir,
-          };
-        }
         return { command, workdir };
       }
 

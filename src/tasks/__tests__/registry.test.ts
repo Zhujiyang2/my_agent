@@ -111,27 +111,31 @@ describe('TaskRegistry', () => {
     await registry.waitFor(task.id);
     const result = registry.cleanup({ olderThanDays: 0 });
     expect(result.deleted).toBeGreaterThanOrEqual(1);
-    const stdoutExists = fs.existsSync(task.stdoutPath);
-    expect(stdoutExists).toBe(false);
+    const outputExists = fs.existsSync(task.outputPath);
+    expect(outputExists).toBe(false);
   });
 
-  it('save + restore roundtrip', async () => {
-    const task = registry.spawn('echo hello');
-    await registry.waitFor(task.id);
+  it('save does not persist completed tasks, does persist non-completed', async () => {
+    const completedTask = registry.spawn('echo done');
+    await registry.waitFor(completedTask.id);
+    const failedTask = registry.spawn('exit 42');
+    await registry.waitFor(failedTask.id);
     await registry.save();
 
     const registry2 = createTaskRegistry(TEST_DIR);
     await registry2.restore();
-    const restored = registry2.get(task.id);
-    expect(restored).toBeDefined();
-    expect(restored!.command).toBe('echo hello');
+    // Completed tasks are filtered from save
+    expect(registry2.get(completedTask.id)).toBeUndefined();
+    // Failed (non-completed) tasks are persisted
+    expect(registry2.get(failedTask.id)).toBeDefined();
+    expect(registry2.get(failedTask.id)!.command).toBe('exit 42');
     registry2.destroy();
   });
 
   it('readOutput returns task output', async () => {
     const task = registry.spawn('echo out1 && echo out2');
     await registry.waitFor(task.id);
-    const out = await registry.readOutput(task.id, 'stdout');
+    const out = await registry.readOutput(task.id);
     expect(out).toContain('out1');
     expect(out).toContain('out2');
   });

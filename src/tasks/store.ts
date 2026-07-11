@@ -37,14 +37,14 @@ export function createTaskStore(baseDir: string) {
     }
   }
 
-  async function appendOutput(taskId: string, stream: 'stdout' | 'stderr', chunk: string): Promise<void> {
+  async function appendOutput(taskId: string, chunk: string): Promise<void> {
     await ensureDir();
-    const filePath = path.join(jobsDir, `${taskId}.${stream}`);
+    const filePath = path.join(jobsDir, `${taskId}.output`);
     await fs.promises.appendFile(filePath, chunk, 'utf-8');
   }
 
-  async function readOutput(taskId: string, stream: 'stdout' | 'stderr', lines = 100): Promise<string> {
-    const filePath = path.join(jobsDir, `${taskId}.${stream}`);
+  async function readOutput(taskId: string, lines = 100): Promise<string> {
+    const filePath = path.join(jobsDir, `${taskId}.output`);
     try {
       const content = await fs.promises.readFile(filePath, 'utf-8');
       // Split and drop trailing empty string from final \n
@@ -58,27 +58,11 @@ export function createTaskStore(baseDir: string) {
     }
   }
 
-  async function writeExit(taskId: string, data: { exitCode: number | null; signal: string | null; finishedAt: number }): Promise<void> {
-    await ensureDir();
-    const filePath = path.join(jobsDir, `${taskId}.exit`);
-    await fs.promises.writeFile(filePath, JSON.stringify(data), 'utf-8');
-  }
-
-  async function readExit(taskId: string): Promise<{ exitCode: number | null; signal: string | null; finishedAt: number } | null> {
-    const filePath = path.join(jobsDir, `${taskId}.exit`);
-    try {
-      const data = await fs.promises.readFile(filePath, 'utf-8');
-      return JSON.parse(data);
-    } catch {
-      return null;
-    }
-  }
-
   function getJobDir(): string {
     return jobsDir;
   }
 
-  return { saveTasks, loadTasks, appendOutput, readOutput, writeExit, readExit, ensureDir, getJobDir };
+  return { saveTasks, loadTasks, appendOutput, readOutput, ensureDir, getJobDir };
 }
 
 export type TaskStore = ReturnType<typeof createTaskStore>;

@@ -24,7 +24,8 @@ export function createTaskRegistry(stateDir: string) {
   const timeoutTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   async function save(): Promise<void> {
-    await store.saveTasks(Array.from(tasks.values()));
+    const taskList = Array.from(tasks.values()).filter(t => t.status !== 'completed');
+    await store.saveTasks(taskList);
   }
 
   function spawn(command: string, opts?: {
@@ -35,9 +36,7 @@ export function createTaskRegistry(stateDir: string) {
   }): Task {
     const id = generateId();
     const jobDir = store.getJobDir();
-    const stdoutPath = path.join(jobDir, `${id}.stdout`);
-    const stderrPath = path.join(jobDir, `${id}.stderr`);
-    const exitFilePath = path.join(jobDir, `${id}.exit`);
+    const outputPath = path.join(jobDir, `${id}.output`);
 
     const task: Task = {
       id,
@@ -49,9 +48,7 @@ export function createTaskRegistry(stateDir: string) {
       pid: null,
       exitCode: null,
       signal: null,
-      stdoutPath,
-      stderrPath,
-      exitFilePath,
+      outputPath,
       createdAt: Date.now(),
       finishedAt: null,
       timeoutMs: opts?.timeoutMs !== undefined ? opts.timeoutMs : null,
@@ -68,9 +65,7 @@ export function createTaskRegistry(stateDir: string) {
         workdir: task.workdir,
         env: task.env,
         taskId: id,
-        stdoutPath,
-        stderrPath,
-        exitFilePath,
+        outputPath,
       });
       task.pid = child.pid;
     } catch (err) {
@@ -100,7 +95,7 @@ export function createTaskRegistry(stateDir: string) {
         return;
       }
       try {
-        const out = await store.readOutput(id, 'stdout', 5);
+        const out = await store.readOutput(id, 5);
         if (out) t.tailBuffer = out;
       } catch { /* ignore read errors */ }
     }, 2000);
@@ -165,6 +160,16 @@ export function createTaskRegistry(stateDir: string) {
       save().catch(() => {});
       for (const cb of completeCallbacks) {
         try { cb(t); } catch { /* ignore */ }
+      }
+
+      // Auto-clean successful tasks after callbacks have had a chance to read output
+      if (t.status === 'completed') {
+        setTimeout(() => {
+          try { fs.unlinkSync(t.outputPath); } catch { /* file already gone */ }
+          tasks.delete(id);
+          timeoutTimers.delete(id);
+          save().catch(() => {});
+        }, 0);
       }
     });
 
@@ -276,13 +281,11 @@ export function createTaskRegistry(stateDir: string) {
       if (task.finishedAt !== null && task.finishedAt > cutoff) continue;
       if (task.finishedAt === null && task.createdAt > cutoff) continue;
 
-      for (const p of [task.stdoutPath, task.stderrPath, task.exitFilePath]) {
-        try {
-          const stat = fs.statSync(p);
-          freedBytes += stat.size;
-          fs.unlinkSync(p);
-        } catch { /* file doesn't exist */ }
-      }
+      try {
+        const stat = fs.statSync(task.outputPath);
+        freedBytes += stat.size;
+        fs.unlinkSync(task.outputPath);
+      } catch { /* file doesn't exist */ }
       tasks.delete(id);
       timeoutTimers.delete(id);
       deleted++;
@@ -345,20 +348,15 @@ export function createTaskRegistry(stateDir: string) {
   }
 
   function finishRecoveredTask(task: Task): void {
-    const exit = fs.existsSync(task.exitFilePath)
-      ? JSON.parse(fs.readFileSync(task.exitFilePath, 'utf-8'))
-      : null;
-
-    if (exit) {
-      task.status = exit.exitCode === 0 ? 'completed' : 'failed';
-      task.exitCode = exit.exitCode;
-      task.signal = exit.signal;
-      task.finishedAt = exit.finishedAt;
+    // Check if exit info was already persisted to tasks.json before crash
+    if (task.exitCode !== null) {
+      task.status = task.exitCode === 0 ? 'completed' : 'failed';
+      task.finishedAt = task.finishedAt ?? Date.now();
       task.result = {
-        exitCode: exit.exitCode ?? -1,
-        signal: exit.signal,
-        durationMs: (exit.finishedAt ?? Date.now()) - task.createdAt,
-        killed: exit.signal !== null,
+        exitCode: task.exitCode,
+        signal: task.signal,
+        durationMs: (task.finishedAt ?? Date.now()) - task.createdAt,
+        killed: task.signal !== null,
         timedOut: false,
         spawnError: null,
       };
@@ -372,8 +370,8 @@ export function createTaskRegistry(stateDir: string) {
     }
   }
 
-  async function readOutput(id: string, stream: 'stdout' | 'stderr', lines?: number): Promise<string> {
-    return store.readOutput(id, stream, lines);
+  async function readOutput(id: string, lines?: number): Promise<string> {
+    return store.readOutput(id, lines);
   }
 
   return {

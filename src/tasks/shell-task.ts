@@ -9,16 +9,14 @@ export interface SpawnCommandOptions {
   workdir?: string;
   env?: Record<string, string>;
   taskId: string;
-  stdoutPath: string;
-  stderrPath: string;
-  exitFilePath: string;
+  outputPath: string;
 }
 
 export function spawnCommand(opts: SpawnCommandOptions): { pid: number; promise: Promise<ShellTaskResult> } {
   const startTime = Date.now();
 
   // Ensure the output directory exists
-  const jobDir = path.dirname(opts.exitFilePath);
+  const jobDir = path.dirname(opts.outputPath);
   fs.mkdirSync(jobDir, { recursive: true });
 
   const child = spawn(opts.command, {
@@ -28,27 +26,18 @@ export function spawnCommand(opts: SpawnCommandOptions): { pid: number; promise:
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
-  const stdoutStream = fs.createWriteStream(opts.stdoutPath, { flags: 'a' });
-  const stderrStream = fs.createWriteStream(opts.stderrPath, { flags: 'a' });
+  const outputStream = fs.createWriteStream(opts.outputPath, { flags: 'a' });
 
   // Suppress ENOENT — the output directory may be cleaned up (e.g., tests)
-  stdoutStream.on('error', () => {});
-  stderrStream.on('error', () => {});
+  outputStream.on('error', () => {});
 
-  child.stdout?.pipe(stdoutStream);
-  child.stderr?.pipe(stderrStream);
+  child.stdout?.pipe(outputStream);
+  child.stderr?.pipe(outputStream);
 
   const promise = new Promise<ShellTaskResult>((resolve) => {
     child.on('exit', (code, sig) => {
       const durationMs = Date.now() - startTime;
       const exitCode = code ?? -1;
-      try {
-        fs.writeFileSync(
-          opts.exitFilePath,
-          JSON.stringify({ exitCode, signal: sig ?? null, finishedAt: Date.now() }),
-          'utf-8',
-        );
-      } catch { /* dir may have been cleaned up */ }
       resolve({
         exitCode,
         signal: sig ?? null,

@@ -1,5 +1,6 @@
 // src/mcp/transports/streamable-http.ts
 import type { Transport, JSONRPCMessage } from '../types';
+import { fetchWithRetry } from '../../http/fetch-with-retry';
 
 export interface StreamableHTTPOptions {
   url: string;
@@ -43,7 +44,7 @@ export class StreamableHTTPTransport implements Transport {
       headers['Mcp-Session-Id'] = this._sessionId;
     }
 
-    const response = await fetch(this._url, {
+    const response = await fetchWithRetry(this._url, {
       method: 'POST',
       headers,
       body: JSON.stringify(message),
