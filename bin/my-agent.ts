@@ -33,6 +33,9 @@ import { createSandboxManager, setSandboxManager } from '../src/sandbox/sandbox-
 import { loadSandboxDomains } from '../src/sandbox/net-domains.js';
 import { createRegisterWritableTool } from '../src/tools/sandbox/index.js';
 import { defaultRegistry } from '../src/tools/registry.js';
+import { createTaskRegistry, setTaskRegistry } from '../src/tasks/registry.js';
+import { createStatusLine } from '../src/agent/status-line.js';
+import { resolveProjectPath } from '../src/paths.js';
 
 const nodeVersion = process.versions.node.split('.').map(Number);
 if (nodeVersion[0] < 18) {
@@ -78,6 +81,9 @@ async function main(): Promise<void> {
     prompt: '\x1b[36m> \x1b[0m',
   });
 
+  // Enable keypress events for Ctrl+O status-line toggle
+  readline.emitKeypressEvents(process.stdin);
+
   const commandRegistry = createCommandRegistry();
 
   let currentController: AbortController | null = null;
@@ -115,6 +121,12 @@ async function main(): Promise<void> {
   });
   setSandboxManager(sandboxMgr);
 
+  // Initialize TaskRegistry with persistent state
+  const taskRegistry = createTaskRegistry(resolveProjectPath('.my_agent', 'tasks'));
+  setTaskRegistry(taskRegistry);
+  await taskRegistry.restore();
+  await taskRegistry.recover();
+
   // Register sandbox tools
   defaultRegistry.register(createRegisterWritableTool());
 
@@ -129,7 +141,18 @@ async function main(): Promise<void> {
     },
   });
 
+  // Start task status-line (stderr to avoid mixing with LLM output on stdout)
+  const statusLine = createStatusLine({ intervalMs: 3000 });
+  statusLine.start();
+
   rl.prompt();
+
+  // Ctrl+O toggles task status-line expand/collapse
+  process.stdin.on('keypress', (_ch, key) => {
+    if (key && key.ctrl && key.name === 'o') {
+      statusLine.toggle();
+    }
+  });
 
   rl.on('SIGINT', () => {
     if (currentController) {
@@ -203,6 +226,8 @@ async function main(): Promise<void> {
   });
 
   rl.on('close', () => {
+    statusLine.stop();
+    taskRegistry.destroy();
     subagentManager.destroy();
     mcpManager.destroy().catch(() => {});
     sandboxMgr.destroy().catch(() => {});
