@@ -163,10 +163,12 @@ async function main(): Promise<void> {
   // Render prompt frame before each prompt (skip first one to avoid orphan separator)
   function reprompt(): void {
     console.log(footer.renderSeparator());
+    console.log(footer.render());
     rl.prompt();
   }
 
   console.log(footer.renderSeparator());
+  console.log(footer.render());
   rl.prompt();
 
   // Ctrl+O toggles task status-line expand/collapse
@@ -228,9 +230,6 @@ async function main(): Promise<void> {
     }
 
     // action === 'send_to_agent'
-    // Bottom frame (separator + hints + messages) printed before LLM output
-    console.log(footer.render());
-
     currentController = new AbortController();
 
     try {
