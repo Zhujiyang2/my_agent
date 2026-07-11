@@ -18,7 +18,7 @@ describe('createFooter', () => {
 
       const result = footer.render();
       expect(result).toContain('─'.repeat(80));
-      expect(result).toContain('Ctrl+O expand tasks');
+      expect(result).toContain('/exit to quit | Ctrl+C to interrupt | Ctrl+O tasks');
     });
 
     it('renders a single completed message', () => {
@@ -136,7 +136,7 @@ describe('createFooter', () => {
 
       const result = footer.render();
       expect(result).not.toContain('cmd1');
-      expect(result).toContain('Ctrl+O expand tasks'); // hint still present
+      expect(result).toContain('/exit to quit | Ctrl+C to interrupt | Ctrl+O tasks'); // hint still present
     });
   });
 });

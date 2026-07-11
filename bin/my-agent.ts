@@ -57,7 +57,6 @@ async function main(): Promise<void> {
   console.log(formatWelcome());
   console.log(formatInfo(`  Model: ${config.model}`));
   console.log(formatInfo(`  API: ${config.api_url}`));
-  console.log(formatInfo('  /exit to quit | Ctrl+C to interrupt'));
   console.log('');
 
   // Inject default system prompt if not configured
@@ -161,7 +160,6 @@ async function main(): Promise<void> {
     });
   });
 
-  console.log(footer.render());
   rl.prompt();
 
   // Ctrl+O toggles task status-line expand/collapse
