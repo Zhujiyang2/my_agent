@@ -71,9 +71,9 @@ export function createInputLine(opts: InputLineOpts): InputLine {
     onWrite(`\x1b[36m> ${line}\x1b[0m\n`);
     onWrite(bottom + '\n');
 
-    // Cursor is now at the start of the line AFTER `bottom`.
-    // Move up `bottomLines` rows to the input line.
-    onWrite(`\x1b[${bottomLines}A`);
+    // Cursor is now after the trailing '\n' from `bottom + '\n'`.
+    // Move up past the trailing blank + bottom content to the input line.
+    onWrite(`\x1b[${bottomLines + 1}A`);
     // Move right: past "> " (2 visible columns) + cursor offset within line
     onWrite(`\x1b[${2 + cursor}C`);
 
