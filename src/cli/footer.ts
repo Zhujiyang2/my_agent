@@ -31,7 +31,7 @@ export function createFooter() {
     const width = process.stdout.columns ?? 80;
     const sep = '─'.repeat(width);
 
-    const lines = [sep, '  /exit to quit | Ctrl+C to interrupt | Ctrl+O tasks'];
+    const lines = [sep, sep, '  /exit to quit | Ctrl+C to interrupt | Ctrl+O tasks'];
     for (const msg of messages) {
       lines.push(`${msg.icon} ${msg.text}`);
     }

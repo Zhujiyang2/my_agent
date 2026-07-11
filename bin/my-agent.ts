@@ -160,19 +160,10 @@ async function main(): Promise<void> {
     });
   });
 
-  // Render prompt frame: top sep → prompt → bottom sep → hints/messages
-  function renderFrame(): void {
-    const width = process.stdout.columns ?? 80;
-    const topSep = '─'.repeat(width);
-    const bottom = footer.render();
-    const bottomLines = bottom.split('\n').length;
-
-    console.log(topSep);
+  // Render prompt frame before each prompt (skip first one to avoid orphan separator)
+  function reprompt(): void {
+    console.log(footer.render());
     rl.prompt();
-    process.stdout.write('\n' + bottom);
-    // Move cursor back up to the prompt line
-    readline.moveCursor(process.stdout, 0, -(bottomLines + 1));
-    readline.cursorTo(process.stdout, 2);
   }
 
   rl.prompt();
@@ -190,7 +181,7 @@ async function main(): Promise<void> {
       currentController = null;
       console.log(formatInfo('\n  Interrupted'));
     }
-    renderFrame();
+    reprompt();
   });
 
   rl.on('line', async (line: string) => {
@@ -198,7 +189,7 @@ async function main(): Promise<void> {
 
     const input = line.trim();
     if (!input) {
-      renderFrame();
+      reprompt();
       return;
     }
 
@@ -231,7 +222,7 @@ async function main(): Promise<void> {
     }
 
     if (result.action === 'continue') {
-      renderFrame();
+      reprompt();
       return;
     }
 
@@ -252,7 +243,7 @@ async function main(): Promise<void> {
       currentController = null;
     }
 
-    renderFrame();
+    reprompt();
   });
 
   rl.on('close', () => {
