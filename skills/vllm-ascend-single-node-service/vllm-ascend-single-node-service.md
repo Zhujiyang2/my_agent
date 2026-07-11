@@ -35,21 +35,21 @@ description: 单节点vLLM-Ascend推理服务启动 — Docker容器部署、NPU
 
 **关键：** 如果用户指定了要用的 NPU 卡（如"用卡4"），必须在 `docker run` 时通过 `-e ASCEND_RT_VISIBLE_DEVICES=<卡索引>` 指定，否则应用会默认用卡 0。等价于 CUDA 的 `CUDA_VISIBLE_DEVICES`。用户未指定则默认所有卡可见。
 
-### Phase 3: 查阅部署指导
-
-探索容器内 `/vllm-workspace` 目录（vllm/vllm-ascend 源码仓），自行判断需要读取哪些部署文档。
-
-若镜像内没有代码仓，根据自己的知识构造启动命令。不要询问用户。
-
-关注：vllm serve 命令、模型路径约定、环境变量、推荐参数。
-
-### Phase 4: 构造并启动容器
+### Phase 3: 构造并启动容器
 
 基于前述信息构造 `docker run -d` 命令，**必须加 `--privileged`**——没有特权模式 NPU 设备在容器内无法正常访问。**启动前将完整命令展示给用户确认**。
 
 端口冲突时自动选择下一个可用端口。容器启动后，立即在后台运行 `docker logs -f <容器名> > ./output/vllm_service_<时间戳>.log 2>&1 &`，持续收集 vLLM 启动日志。
 
 启动后检查容器是否退出，若 `Exited` 则直接进入 Phase 7。
+
+### Phase 4: 探索源码仓，确定 vLLM 启动命令
+
+容器已运行。`docker exec` 进入容器，探索 `/vllm-workspace` 目录（vllm/vllm-ascend 源码仓），自行判断需要读取哪些部署文档，确定正确的 vllm serve 命令、模型路径约定、环境变量、推荐参数等。
+
+若默认 entrypoint 已自动启动了 vLLM，则跳过。否则用确定的命令在容器内启动 vLLM 服务。
+
+若镜像内没有源码仓，根据自己的知识构造启动命令。无论哪种情况，**启动前都必须将完整命令展示给用户确认**。
 
 ### Phase 5: 监控服务就绪
 
