@@ -90,9 +90,7 @@ export function createInputLine(opts: InputLineOpts): InputLine {
       onWrite('\x1b[0J');
     } else {
       // No frame visible (first render, or after LLM output).
-      // Cursor may be mid-line (e.g. after LLM streaming). Force newline
-      // + column 0 so the frame always starts at a clean line boundary.
-      onWrite('\n\r');
+      // Just clear from current cursor position down.
       onWrite('\x1b[0J');
     }
 

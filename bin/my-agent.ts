@@ -235,7 +235,8 @@ async function main(): Promise<void> {
       currentController = null;
     }
 
-    // After LLM output, restore the input frame
+    // After LLM output, cursor may be mid-line. Ensure frame starts cleanly.
+    process.stdout.write('\n');
     inputLine.renderFrame();
   }
 
