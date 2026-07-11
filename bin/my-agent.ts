@@ -36,6 +36,7 @@ import { defaultRegistry } from '../src/tools/registry.js';
 import { createTaskRegistry, setTaskRegistry } from '../src/tasks/registry.js';
 import { createStatusLine } from '../src/agent/status-line.js';
 import { createFooter } from '../src/cli/footer.js';
+import { createInputLine } from '../src/cli/input-line.js';
 import { resolveProjectPath } from '../src/paths.js';
 
 const nodeVersion = process.versions.node.split('.').map(Number);
@@ -54,10 +55,10 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  // Print welcome — tight spacing, no trailing blank line
   console.log(formatWelcome());
   console.log(formatInfo(`  Model: ${config.model}`));
   console.log(formatInfo(`  API: ${config.api_url}`));
-  console.log('');
 
   // Inject default system prompt if not configured
   if (!config.context.systemPrompt) {
@@ -75,30 +76,26 @@ async function main(): Promise<void> {
     },
   });
 
+  // readline — used only for:
+  //  1. keypress events → forwarded to InputLine
+  //  2. SIGINT / close events
+  //  3. rl.question() for confirmation dialogs
+  // We do NOT use rl.prompt() or rl.on('line') — InputLine owns all rendering.
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    prompt: '\x1b[36m> \x1b[0m',
+    terminal: true,
   });
 
-  // Enable keypress events for Ctrl+O status-line toggle
+  // Enable raw mode + keypress events for InputLine
   readline.emitKeypressEvents(process.stdin);
+  if (process.stdin.isTTY) {
+    process.stdin.setRawMode(true);
+  }
 
   const commandRegistry = createCommandRegistry();
 
   let currentController: AbortController | null = null;
-  let confirming = false;
-
-  // Safely read a single confirmation line — bypasses readline 'line' events
-  function readConfirmation(): Promise<boolean> {
-    return new Promise((resolve) => {
-      confirming = true;
-      rl.question('> ', (answer) => {
-        confirming = false;
-        resolve(answer.trim().toLowerCase().startsWith('y'));
-      });
-    });
-  }
 
   // Initialize subagent manager
   const subagentManager = new SubagentManager(config);
@@ -133,19 +130,7 @@ async function main(): Promise<void> {
   // Load skills from project directory
   loadSkills(path.join(process.cwd(), 'skills'));
 
-  // Set up safety confirmation — must be after rl creation
-  setExecutorCallbacks({
-    onConfirm: async (command: string, category: string) => {
-      process.stdout.write(promptConfirm(command, category) + '\n');
-      return readConfirmation();
-    },
-  });
-
-  // Start task status-line (stderr to avoid mixing with LLM output on stdout)
-  const statusLine = createStatusLine({ intervalMs: 3000 });
-  statusLine.start();
-
-  // Initialize footer for job completion messages
+  // Initialize footer for job completion messages + frame rendering
   const footer = createFooter();
   taskRegistry.onTaskComplete((task) => {
     const icon = task.status === 'completed' ? '✓' : '✗';
@@ -160,37 +145,40 @@ async function main(): Promise<void> {
     });
   });
 
-  // Render frame above prompt: both separators + hints → then prompt at bottom
-  function reprompt(): void {
-    console.log(footer.renderSeparator());
-    console.log(footer.render());
-    rl.prompt();
-  }
-
-  reprompt();
-
-  // Ctrl+O toggles task status-line expand/collapse
-  process.stdin.on('keypress', (_ch, key) => {
-    if (key && key.ctrl && key.name === 'o') {
-      statusLine.toggle();
-    }
+  // InputLine: self-managed frame + cursor. readline only provides keypress events.
+  const inputLine = createInputLine({
+    footer,
+    onWrite: (text: string) => process.stdout.write(text),
   });
 
-  rl.on('SIGINT', () => {
-    if (currentController) {
-      currentController.abort();
-      currentController = null;
-      console.log(formatInfo('\n  Interrupted'));
-    }
-    reprompt();
+  // Render initial frame at the bottom of the welcome output
+  inputLine.renderFrame();
+
+  // Set up safety confirmation — temporarily leave raw mode for rl.question()
+  setExecutorCallbacks({
+    onConfirm: async (command: string, category: string) => {
+      process.stdout.write(promptConfirm(command, category) + '\n');
+      // Exit raw mode so rl.question() gets 'line' events
+      if (process.stdin.isTTY) process.stdin.setRawMode(false);
+      const answer = await new Promise<string>((resolve) => {
+        rl.question('> ', resolve);
+      });
+      // Back to raw mode for InputLine
+      if (process.stdin.isTTY) process.stdin.setRawMode(true);
+      return answer.trim().toLowerCase().startsWith('y');
+    },
   });
 
-  rl.on('line', async (line: string) => {
-    if (confirming) return;
+  // Start task status-line (stderr to avoid mixing with LLM output on stdout)
+  const statusLine = createStatusLine({ intervalMs: 3000 });
+  statusLine.start();
 
-    const input = line.trim();
+  // Main submit handler — called when user presses Enter
+  async function handleSubmit(): Promise<void> {
+    const rawInput = inputLine.submit();
+    const input = rawInput.trim();
     if (!input) {
-      rl.prompt();
+      inputLine.renderFrame();
       return;
     }
 
@@ -204,12 +192,16 @@ async function main(): Promise<void> {
         error: (text: string) => console.log(formatError(`  ${text}`)),
       },
       ui: {
-        prompt: (text: string) =>
-          new Promise<string>((resolve) => {
+        prompt: async (text: string) => {
+          if (process.stdin.isTTY) process.stdin.setRawMode(false);
+          const answer = await new Promise<string>((resolve) => {
             rl.question(text, resolve);
-          }),
+          });
+          if (process.stdin.isTTY) process.stdin.setRawMode(true);
+          return answer;
+        },
         write: (text: string) => {
-          rl.write(text);
+          process.stdout.write(text);
         },
       },
     };
@@ -223,7 +215,7 @@ async function main(): Promise<void> {
     }
 
     if (result.action === 'continue') {
-      reprompt();
+      inputLine.renderFrame();
       return;
     }
 
@@ -232,7 +224,6 @@ async function main(): Promise<void> {
 
     try {
       await agent.send(result.input, currentController.signal);
-      console.log('\n');
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === 'AbortError') {
         // interrupted by Ctrl+C — no extra message needed
@@ -244,7 +235,52 @@ async function main(): Promise<void> {
       currentController = null;
     }
 
-    reprompt();
+    // After LLM output, restore the input frame
+    inputLine.renderFrame();
+  }
+
+  // Unified keypress handler: dispatch by key
+  process.stdin.on('keypress', (_ch, key) => {
+    if (!key) return;
+
+    // Ctrl+O: toggle task status-line expand/collapse
+    if (key.ctrl && !key.meta && key.name === 'o') {
+      statusLine.toggle();
+      return;
+    }
+
+    // Ctrl+C: abort current LLM call
+    if (key.ctrl && key.name === 'c') {
+      if (currentController) {
+        currentController.abort();
+        currentController = null;
+        console.log(formatInfo('\n  Interrupted'));
+      }
+      inputLine.reset();
+      return;
+    }
+
+    // Enter: submit input
+    if (key.name === 'return' || key.name === 'enter') {
+      handleSubmit();
+      return;
+    }
+
+    // All other keys → InputLine for editing
+    inputLine.onKeypress(
+      _ch || '',
+      { name: key.name || '', ctrl: !!key.ctrl, meta: !!key.meta, shift: !!key.shift },
+    );
+  });
+
+  // SIGINT from OS (Ctrl+C in raw mode arrives via keypress above; this is fallback)
+  rl.on('SIGINT', () => {
+    if (currentController) {
+      currentController.abort();
+      currentController = null;
+      console.log(formatInfo('\n  Interrupted'));
+    }
+    inputLine.reset();
   });
 
   rl.on('close', () => {
@@ -253,6 +289,7 @@ async function main(): Promise<void> {
     subagentManager.destroy();
     mcpManager.destroy().catch(() => {});
     sandboxMgr.destroy().catch(() => {});
+    if (process.stdin.isTTY) process.stdin.setRawMode(false);
     process.exit(0);
   });
 }
