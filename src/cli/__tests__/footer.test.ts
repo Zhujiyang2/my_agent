@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createFooter } from '../footer';
-import type { FooterMessage } from '../footer';
 
 describe('createFooter', () => {
   let footer: ReturnType<typeof createFooter>;
