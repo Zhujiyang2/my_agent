@@ -359,3 +359,15 @@ export function createTaskRegistry(stateDir: string) {
 }
 
 export type TaskRegistry = ReturnType<typeof createTaskRegistry>;
+
+// ── Global singleton ──
+
+let taskRegistry: TaskRegistry | null = null;
+
+export function setTaskRegistry(reg: TaskRegistry | null): void {
+  taskRegistry = reg;
+}
+
+export function getTaskRegistry(): TaskRegistry | null {
+  return taskRegistry;
+}

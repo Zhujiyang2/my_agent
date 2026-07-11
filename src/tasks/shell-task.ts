@@ -31,6 +31,10 @@ export function spawnCommand(opts: SpawnCommandOptions): { pid: number; promise:
   const stdoutStream = fs.createWriteStream(opts.stdoutPath, { flags: 'a' });
   const stderrStream = fs.createWriteStream(opts.stderrPath, { flags: 'a' });
 
+  // Suppress ENOENT — the output directory may be cleaned up (e.g., tests)
+  stdoutStream.on('error', () => {});
+  stderrStream.on('error', () => {});
+
   child.stdout?.pipe(stdoutStream);
   child.stderr?.pipe(stderrStream);
 
@@ -38,11 +42,13 @@ export function spawnCommand(opts: SpawnCommandOptions): { pid: number; promise:
     child.on('exit', (code, sig) => {
       const durationMs = Date.now() - startTime;
       const exitCode = code ?? -1;
-      fs.writeFileSync(
-        opts.exitFilePath,
-        JSON.stringify({ exitCode, signal: sig ?? null, finishedAt: Date.now() }),
-        'utf-8',
-      );
+      try {
+        fs.writeFileSync(
+          opts.exitFilePath,
+          JSON.stringify({ exitCode, signal: sig ?? null, finishedAt: Date.now() }),
+          'utf-8',
+        );
+      } catch { /* dir may have been cleaned up */ }
       resolve({
         exitCode,
         signal: sig ?? null,

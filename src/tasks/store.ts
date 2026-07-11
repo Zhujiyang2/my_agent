@@ -5,18 +5,23 @@ import type { Task } from './types';
 
 export function createTaskStore(baseDir: string) {
   const jobsDir = path.join(baseDir, 'jobs');
+  let saveLock: Promise<void> = Promise.resolve();
 
   async function ensureDir(): Promise<void> {
     await fs.promises.mkdir(jobsDir, { recursive: true });
   }
 
   async function saveTasks(tasks: Task[]): Promise<void> {
-    await ensureDir();
-    const tmpPath = path.join(baseDir, 'tasks.json.tmp');
-    const targetPath = path.join(baseDir, 'tasks.json');
-    const data = JSON.stringify(tasks, null, 2);
-    await fs.promises.writeFile(tmpPath, data, 'utf-8');
-    await fs.promises.rename(tmpPath, targetPath);
+    // Serialize writes to avoid tmp-file collision
+    saveLock = saveLock.then(async () => {
+      await ensureDir();
+      const tmpPath = path.join(baseDir, 'tasks.json.tmp');
+      const targetPath = path.join(baseDir, 'tasks.json');
+      const data = JSON.stringify(tasks, null, 2);
+      await fs.promises.writeFile(tmpPath, data, 'utf-8');
+      await fs.promises.rename(tmpPath, targetPath);
+    });
+    await saveLock;
   }
 
   async function loadTasks(): Promise<Task[]> {
