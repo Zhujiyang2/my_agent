@@ -243,9 +243,12 @@ async function main(): Promise<void> {
   process.stdin.on('keypress', (_ch, key) => {
     if (!key) return;
 
-    // Ctrl+O: toggle task status-line expand/collapse
+    // Ctrl+O: toggle task status-line expand/collapse.
+    // Status-line writes to stderr, which can move the shared terminal cursor.
+    // Re-render the frame afterwards to restore correct cursor position.
     if (key.ctrl && !key.meta && key.name === 'o') {
       statusLine.toggle();
+      inputLine.renderFrame();
       return;
     }
 
