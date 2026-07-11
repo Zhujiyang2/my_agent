@@ -51,7 +51,7 @@ describe('createStatusLine', () => {
       expect(result).toContain('1 running');
     });
 
-    it('shows completed task status', () => {
+    it('does not show completed task in collapsed mode', () => {
       const tasks = [makeTask({
         id: 'job-abc123',
         status: 'completed',
@@ -59,10 +59,11 @@ describe('createStatusLine', () => {
         finishedAt: Date.now(),
       })];
       const result = sl.renderStatusLine(tasks);
-      expect(result).toContain('completed');
+      // Collapsed mode: no completed tasks shown
+      expect(result).toBe('');
     });
 
-    it('shows failed task status', () => {
+    it('does not show failed task in collapsed mode', () => {
       const tasks = [makeTask({
         id: 'job-fail01',
         status: 'failed',
@@ -70,17 +71,19 @@ describe('createStatusLine', () => {
         finishedAt: Date.now(),
       })];
       const result = sl.renderStatusLine(tasks);
-      expect(result).toContain('failed');
+      // Collapsed mode: no failed tasks shown
+      expect(result).toBe('');
     });
 
-    it('handles mixed running and completed tasks in collapsed mode', () => {
+    it('shows only running tasks in collapsed mode', () => {
       const tasks = [
         makeTask({ id: 'job-run-1', status: 'running' }),
         makeTask({ id: 'job-done-1', status: 'completed', exitCode: 0, finishedAt: Date.now() }),
       ];
       const result = sl.renderStatusLine(tasks);
       expect(result).toContain('1 running');
-      expect(result).toContain('completed');
+      expect(result).not.toContain('completed');
+      expect(result).not.toContain('failed');
     });
   });
 

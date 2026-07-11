@@ -26,17 +26,9 @@ export function createStatusLine(opts: StatusLineOptions = {}) {
     if (active.length === 0 && recent.length === 0) return '';
 
     if (!expanded) {
-      // Collapsed: single-line summary
-      const parts: string[] = [];
-      if (active.length > 0) {
-        parts.push(`⚡ ${active.length} running`);
-      }
-      if (recent.length > 0) {
-        const last = recent[0];
-        const icon = last.status === 'completed' ? '✓' : last.status === 'failed' ? '✗' : '•';
-        parts.push(`${icon} ${last.id.slice(0, 16)}: ${last.status}`);
-      }
-      return `\x1b[2m┃ ${parts.join(' │ ')}\x1b[0m`;
+      // Collapsed: only show running tasks
+      if (active.length === 0) return '';
+      return `\x1b[2m┃ ⚡ ${active.length} running\x1b[0m`;
     }
 
     // Expanded: one line per task
