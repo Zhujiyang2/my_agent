@@ -24,6 +24,7 @@ export function createInputLine(opts: InputLineOpts): InputLine {
 
   let line = '';
   let cursor = 0;
+  let isFrameVisible = false;
 
   function getLine(): string {
     return line;
@@ -51,8 +52,19 @@ export function createInputLine(opts: InputLineOpts): InputLine {
     const bottom = footer.render();
     const bottomLines = bottom.split('\n').length;
 
+    if (isFrameVisible) {
+      // Frame is already on screen. Cursor is on the input line (mid-frame).
+      // Move up 1 line to above the old top separator, then clear from there.
+      onWrite('\r');
+      onWrite('\x1b[1A');
+      onWrite('\x1b[0J');
+    } else {
+      // No frame visible (first render, or after LLM streaming).
+      // Cursor is at the end of previous output. Clear from cursor down.
+      onWrite('\x1b[0J');
+    }
+
     // Write frame top-to-bottom
-    onWrite('\x1b[0J'); // clear from cursor to end of screen
     onWrite(topSep + '\n');
     onWrite(`\x1b[36m> ${line}\x1b[0m\n`);
     onWrite(bottom + '\n');
@@ -62,6 +74,8 @@ export function createInputLine(opts: InputLineOpts): InputLine {
     onWrite(`\x1b[${bottomLines}A`);
     // Move right: past "> " (2 visible columns) + cursor offset within line
     onWrite(`\x1b[${2 + cursor}C`);
+
+    isFrameVisible = true;
   }
 
   function onKeypress(
@@ -109,6 +123,7 @@ export function createInputLine(opts: InputLineOpts): InputLine {
     }
     line = '';
     cursor = 0;
+    isFrameVisible = false;
     return submitted;
   }
 
