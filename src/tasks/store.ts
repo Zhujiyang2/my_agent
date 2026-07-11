@@ -47,8 +47,9 @@ export function createTaskStore(baseDir: string) {
     const filePath = path.join(jobsDir, `${taskId}.output`);
     try {
       const content = await fs.promises.readFile(filePath, 'utf-8');
-      // Split and drop trailing empty string from final \n
-      const allLines = content.split('\n');
+      // Strip __EXIT__ recovery metadata lines
+      const cleaned = content.split('\n').filter(l => !l.startsWith('__EXIT__')).join('\n');
+      const allLines = cleaned.split('\n');
       const meaningful = allLines[allLines.length - 1] === '' ? allLines.slice(0, -1) : allLines;
       if (meaningful.length === 0) return '';
       const tail = meaningful.slice(-lines);

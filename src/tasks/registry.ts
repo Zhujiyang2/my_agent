@@ -348,15 +348,32 @@ export function createTaskRegistry(stateDir: string) {
   }
 
   function finishRecoveredTask(task: Task): void {
-    // Check if exit info was already persisted to tasks.json before crash
-    if (task.exitCode !== null) {
-      task.status = task.exitCode === 0 ? 'completed' : 'failed';
-      task.finishedAt = task.finishedAt ?? Date.now();
+    let exitData: { exitCode: number; signal: string | null; finishedAt: number } | null = null;
+
+    // Try to read exit info from the output file tail (crash recovery)
+    try {
+      const outputContent = fs.readFileSync(task.outputPath, 'utf-8');
+      const exitMarker = '__EXIT__';
+      const markerIdx = outputContent.lastIndexOf(exitMarker);
+      if (markerIdx >= 0) {
+        const jsonStart = markerIdx + exitMarker.length;
+        const jsonEnd = outputContent.indexOf('\n', jsonStart);
+        if (jsonEnd > jsonStart) {
+          exitData = JSON.parse(outputContent.slice(jsonStart, jsonEnd));
+        }
+      }
+    } catch { /* file doesn't exist or can't be read */ }
+
+    if (exitData) {
+      task.status = exitData.exitCode === 0 ? 'completed' : 'failed';
+      task.exitCode = exitData.exitCode;
+      task.signal = exitData.signal;
+      task.finishedAt = exitData.finishedAt;
       task.result = {
-        exitCode: task.exitCode,
-        signal: task.signal,
-        durationMs: (task.finishedAt ?? Date.now()) - task.createdAt,
-        killed: task.signal !== null,
+        exitCode: exitData.exitCode ?? -1,
+        signal: exitData.signal,
+        durationMs: (exitData.finishedAt ?? Date.now()) - task.createdAt,
+        killed: exitData.signal !== null,
         timedOut: false,
         spawnError: null,
       };

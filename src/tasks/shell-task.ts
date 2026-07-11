@@ -38,6 +38,10 @@ export function spawnCommand(opts: SpawnCommandOptions): { pid: number; promise:
     child.on('exit', (code, sig) => {
       const durationMs = Date.now() - startTime;
       const exitCode = code ?? -1;
+      const exitInfo = JSON.stringify({ exitCode, signal: sig ?? null, finishedAt: Date.now() });
+      try {
+        fs.appendFileSync(opts.outputPath, `\n__EXIT__${exitInfo}\n`);
+      } catch { /* file may be gone */ }
       resolve({
         exitCode,
         signal: sig ?? null,

@@ -6,7 +6,7 @@ import { filterProgressBars } from '../../tasks/types';
 export const lookupTaskTool: ToolDefinition = {
   name: 'lookup_task',
   description:
-    'Look up a background task by id. Returns current status, the last N lines of stdout/stderr, ' +
+    'Look up a background task by id. Returns current status, the last N lines of output, ' +
     'and the exit code if the task has finished. Use this to check on long-running commands.',
   parameters: {
     type: 'object',
