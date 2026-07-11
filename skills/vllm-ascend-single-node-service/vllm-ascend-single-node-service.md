@@ -44,13 +44,19 @@ description: 单节点vLLM-Ascend推理服务启动 — Docker容器部署、NPU
 
 基于前述信息构造 `docker run -d` 命令（需 `--privileged`）。**启动前将完整命令展示给用户确认**。
 
-端口冲突时自动选择下一个可用端口。启动后立即检查容器是否退出，若 `Exited` 则直接进入 Phase 7。
+端口冲突时自动选择下一个可用端口。容器启动后，立即在后台运行 `docker logs -f <容器名> > ./output/vllm_service_<时间戳>.log 2>&1 &`，持续收集 vLLM 启动日志。
+
+启动后检查容器是否退出，若 `Exited` 则直接进入 Phase 7。
 
 ### Phase 5: 监控服务就绪（从宿主机）
 
-轮询 `curl http://localhost:<port>/health`，每 5 秒一次，最长等 5 分钟。每 10 次输出进度。
+轮询 `curl -s -o /dev/null -w "%{http_code}" http://localhost:<port>/health`，每 5 秒一次，最长等 5 分钟。
 
-超时则检查 `docker logs` 中是否有 "Application startup complete" / "Uvicorn running" 等标记。无标记 → Phase 7。
+**关键：每轮询 3 次（约 15 秒）输出一次进度**（如 "⏳ 等待服务就绪 (15s/300s)..."），让用户知道程序没有卡死。
+
+curl 在服务未就绪时必然连接失败（返回 000 或报错）——这是正常的。**必须**在脚本中用 `2>/dev/null` 抑制 stderr、用 `|| true` 兜底，**严禁**将单次 curl 的报错暴露给用户。只有 HTTP 200 才是就绪。
+
+超时后检查 `docker logs` 中是否有 "Application startup complete" / "Uvicorn running" 等标记。无标记 → Phase 7。
 
 ### Phase 6: 验证推理
 
