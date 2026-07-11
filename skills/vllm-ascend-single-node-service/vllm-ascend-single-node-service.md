@@ -31,7 +31,7 @@ description: 单节点vLLM-Ascend推理服务启动 — Docker容器部署、NPU
 
 用 `npu-smi` 检测宿主机 NPU 卡数量。若为 0 → 报错终止。
 
-将所有 `davinciX` 卡及配套设备（`davinci_manager`、`devmm_svm`、`hisi_hdc`）通过 `--device` 映射进容器。建议挂载 `/usr/local/Ascend` 以复用宿主 CANN 工具。
+`--privileged` 已将所有设备暴露给容器，无需单独 `--device /dev/davinciX` 映射。建议挂载 `/usr/local/Ascend` 以使用宿主固件/驱动（CANN 运行环境由镜像自带）。
 
 **关键：** 如果用户指定了要用的 NPU 卡（如"用卡4"），必须在 `docker run` 时通过 `-e ASCEND_RT_VISIBLE_DEVICES=<卡索引>` 指定，否则应用会默认用卡 0。等价于 CUDA 的 `CUDA_VISIBLE_DEVICES`。用户未指定则默认所有卡可见。
 
