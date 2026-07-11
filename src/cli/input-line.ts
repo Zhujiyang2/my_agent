@@ -2,6 +2,35 @@ import type { createFooter } from './footer.js';
 
 type Footer = ReturnType<typeof createFooter>;
 
+/** Calculate display width of a string (CJK characters = 2 columns). */
+function displayWidth(s: string): number {
+  let width = 0;
+  for (const ch of s) {
+    const cp = ch.codePointAt(0)!;
+    if (cp <= 0x7f) {
+      width += 1;
+    } else if (
+      (cp >= 0x1100 && cp <= 0x115f) || // Hangul Jamo
+      cp === 0x2329 || cp === 0x232a || // Misc technical
+      (cp >= 0x2e80 && cp <= 0xa4cf) || // CJK Radicals … Yi
+      (cp >= 0xa960 && cp <= 0xa97f) || // Hangul Jamo Extended
+      (cp >= 0xac00 && cp <= 0xd7af) || // Hangul Syllables
+      (cp >= 0xf900 && cp <= 0xfaff) || // CJK Compatibility
+      (cp >= 0xfe10 && cp <= 0xfe1f) || // Vertical forms
+      (cp >= 0xfe30 && cp <= 0xfe6f) || // CJK Compatibility Forms
+      (cp >= 0xff01 && cp <= 0xff60) || // Fullwidth Forms
+      (cp >= 0xffe0 && cp <= 0xffe6) || // Fullwidth Signs
+      (cp >= 0x1f000 && cp <= 0x1f9ff) || // Emoji / Symbols
+      (cp >= 0x20000 && cp <= 0x2ffff)    // CJK Extension B+
+    ) {
+      width += 2;
+    } else {
+      width += 1;
+    }
+  }
+  return width;
+}
+
 export interface InputLineOpts {
   footer: Footer;
   onWrite: (text: string) => void;
@@ -73,8 +102,9 @@ export function createInputLine(opts: InputLineOpts): InputLine {
     // Cursor is now after the trailing '\n' from `bottom + '\n'`.
     // Move up past the trailing blank + bottom content to the input line.
     onWrite(`\x1b[${bottomLines + 1}A`);
-    // Move right: past "> " (2 visible columns) + cursor offset within line
-    onWrite(`\x1b[${2 + cursor}C`);
+    // Move right: "> " (2 cols) + display width of characters before cursor
+    const offset = 2 + displayWidth(line.slice(0, cursor));
+    onWrite(`\x1b[${offset}C`);
 
     isFrameVisible = true;
   }
