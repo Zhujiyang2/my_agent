@@ -53,14 +53,16 @@ export function createInputLine(opts: InputLineOpts): InputLine {
     const bottomLines = bottom.split('\n').length;
 
     if (isFrameVisible) {
-      // Frame is already on screen. Cursor is on the input line (mid-frame).
-      // Move up 1 line to above the old top separator, then clear from there.
+      // Restore cursor to the row where we first saved it (above the old top
+      // separator). Move to column 0, then clear from there to end of screen.
+      onWrite('\x1b[u');
       onWrite('\r');
-      onWrite('\x1b[1A');
       onWrite('\x1b[0J');
     } else {
-      // No frame visible (first render, or after LLM streaming).
-      // Cursor is at the end of previous output. Clear from cursor down.
+      // No frame visible yet. Save cursor position (this row will be the top
+      // of the new frame). Move to column 0, then clear from there down.
+      onWrite('\x1b[s');
+      onWrite('\r');
       onWrite('\x1b[0J');
     }
 
