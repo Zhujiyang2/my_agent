@@ -43,7 +43,8 @@ export function createStatusLine(opts: StatusLineOptions = {}) {
     for (const t of recent) {
       const elapsed = ((t.finishedAt ?? t.createdAt) - t.createdAt) / 1000;
       const icon = t.status === 'completed' ? '✓' : t.status === 'failed' ? '✗' : '•';
-      lines.push(`\x1b[2m┃ ${icon} ${t.id.slice(-12)} ${t.status} ${elapsed.toFixed(0)}s exit=${t.exitCode}\x1b[0m`);
+      const cmd = t.command.length > 60 ? t.command.slice(0, 57) + '...' : t.command;
+      lines.push(`\x1b[2m┃ ${icon} ${cmd}: ${t.status} (${elapsed.toFixed(0)}s)\x1b[0m`);
     }
     // Footer
     lines.push(`\x1b[2m┃ Ctrl+O to collapse\x1b[0m`);
@@ -82,10 +83,6 @@ export function createStatusLine(opts: StatusLineOptions = {}) {
     const tasks = reg ? reg.list() : [];
     const line = renderStatusLine(tasks);
 
-    // Save cursor position — stderr shares the terminal cursor with stdout,
-    // so we must restore it after writing to avoid corrupting the frame.
-    output.write('\x1b7');
-
     // Clear previous status lines
     if (lastLineCount > 0) {
       for (let i = 0; i < lastLineCount; i++) {
@@ -100,9 +97,6 @@ export function createStatusLine(opts: StatusLineOptions = {}) {
     } else {
       lastLineCount = 0;
     }
-
-    // Restore cursor — return to wherever it was before the status write
-    output.write('\x1b8');
   }
 
   function start(): void {
