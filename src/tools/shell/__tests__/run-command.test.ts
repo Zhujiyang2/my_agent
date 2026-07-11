@@ -1,43 +1,44 @@
 // src/tools/shell/__tests__/run-command.test.ts
-import { describe, it, expect } from 'vitest';
-import { runCommandTool } from '../run-command';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
 import os from 'node:os';
+import { runCommandTool } from '../run-command';
+import { createTaskRegistry, setTaskRegistry, getTaskRegistry } from '../../../tasks/registry';
+
+const TEST_DIR = path.join(os.tmpdir(), 'my-agent-run-cmd-test');
 
 describe('runCommandTool', () => {
+  beforeEach(() => {
+    fs.rmSync(TEST_DIR, { recursive: true, force: true });
+    setTaskRegistry(createTaskRegistry(TEST_DIR));
+  });
+
+  afterEach(async () => {
+    const reg = getTaskRegistry();
+    // Wait for all running tasks to settle before cleanup
+    if (reg) {
+      const running = reg.list({ status: 'running' });
+      for (const t of running) {
+        try { reg.kill(t.id); } catch { /* ignore */ }
+      }
+      // Give processes time to exit
+      await new Promise(r => setTimeout(r, 200));
+      reg.destroy();
+    }
+    setTaskRegistry(null);
+    fs.rmSync(TEST_DIR, { recursive: true, force: true });
+  });
+
   it('has correct name', () => {
     expect(runCommandTool.name).toBe('run_command');
   });
 
-  it('executes a simple command and returns stdout', async () => {
+  it('spawns a command and returns task id placeholder', async () => {
     const result = await runCommandTool.handler({ command: 'echo hello' });
     expect(result.isError).toBeFalsy();
-    expect(result.content).toContain('hello');
-    expect(result.content).toContain('exit code: 0');
-  });
-
-  it('executes command in a specified workdir', async () => {
-    const tmp = os.tmpdir();
-    const cwdCmd = process.platform === 'win32' ? 'echo %cd%' : 'pwd';
-    const cwdExpected = process.platform === 'win32' ? 'temp' : 'tmp';
-    const result = await runCommandTool.handler({ command: cwdCmd, workdir: tmp });
-    expect(result.isError).toBeFalsy();
-    expect(result.content.toLowerCase()).toContain(cwdExpected);
-  });
-
-  it('captures stderr when command fails', async () => {
-    const result = await runCommandTool.handler({ command: 'node -e "console.error(\'error msg\'); process.exit(1)"' });
-    expect(result.content).toContain('error msg');
-    expect(result.content).toContain('exit code: 1');
-  });
-
-  it('reports non-zero exit code', async () => {
-    const result = await runCommandTool.handler({ command: 'exit 1' });
-    expect(result.content).toContain('exit code: 1');
-  });
-
-  it('handles command not found gracefully', async () => {
-    const result = await runCommandTool.handler({ command: 'nonexistent_command_xyz' });
-    expect(result.content).toContain('exit code');
+    expect(result.content).toContain('Task started');
+    expect(result.content).toMatch(/job-/);
   });
 
   it('returns error for empty command', async () => {
@@ -49,14 +50,26 @@ describe('runCommandTool', () => {
     const result = await runCommandTool.handler({ command: 'echo hello' });
     expect(result.summary).toBeDefined();
     expect(typeof result.summary).toBe('string');
-    expect(result.summary).toContain('exit=0');
+    expect(result.summary).toContain('spawned');
     expect(result.exitCode).toBe(0);
     expect(result.keyOutput).toBeDefined();
   });
 
-  it('returns exitCode 1 and isError for failed commands', async () => {
-    const result = await runCommandTool.handler({ command: 'node -e "process.exit(1)"' });
-    expect(result.exitCode).toBe(1);
-    expect(result.isError).toBe(true);
+  it('task appears in registry after spawn', async () => {
+    const result = await runCommandTool.handler({ command: 'echo quick-test' });
+    const taskId = result.keyOutput?.match(/job-\d+-\w+/)?.[0];
+    expect(taskId).toBeDefined();
+    const reg = getTaskRegistry();
+    expect(reg).not.toBeNull();
+    const task = reg!.get(taskId!);
+    expect(task).toBeDefined();
+    expect(task!.status).toBe('running');
+    // Wait for completion
+    await reg!.waitFor(taskId!);
+  });
+
+  it('returns correct summary format', async () => {
+    const result = await runCommandTool.handler({ command: 'echo test' });
+    expect(result.summary).toMatch(/job-\d+-\w+: spawned/);
   });
 });

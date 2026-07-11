@@ -14,6 +14,7 @@ import { createMemoryManager } from '../memory/index';
 import { createRememberTool } from '../tools/memory/remember';
 import { createForgetTool } from '../tools/memory/forget';
 import { resolveProjectPath } from '../paths';
+import { getTaskRegistry } from '../tasks/registry';
 
 export interface AgentOptions {
     onToken?: (token: string) => void;
@@ -200,6 +201,42 @@ export function createAgent(config: Config, options: AgentOptions = {}): AgentSe
                     if ('keyOutput' in toolResult) toolMsg.keyOutput = toolResult.keyOutput;
 
                     contextManager.append(toolMsg as Message);
+
+                    // Register task completion callback for async run_command results
+                    if (tc.function.name === 'run_command' && !toolResult.isError) {
+                        const taskId = toolResult.keyOutput?.match(/task (job-\d+-\w+) spawned/)?.[1];
+                        if (taskId) {
+                            const taskReg = getTaskRegistry();
+                            if (taskReg) {
+                                const cleanup = taskReg.onTaskComplete(async (completed) => {
+                                    if (completed.id !== taskId) return;
+                                    cleanup();
+
+                                    const [stdout, stderr] = await Promise.all([
+                                        taskReg.readOutput(taskId, 'stdout', 200),
+                                        taskReg.readOutput(taskId, 'stderr', 200),
+                                    ]);
+
+                                    const parts: string[] = [
+                                        `Background task ${taskId} finished.`,
+                                        `status: ${completed.status}`,
+                                        `exit code: ${completed.exitCode}`,
+                                    ];
+                                    if (stdout.trim()) {
+                                        parts.push(`\n--- stdout ---\n${stdout.slice(-2000)}`);
+                                    }
+                                    if (stderr.trim()) {
+                                        parts.push(`\n--- stderr ---\n${stderr.slice(-2000)}`);
+                                    }
+
+                                    contextManager.append({
+                                        role: 'user',
+                                        content: parts.join('\n'),
+                                    });
+                                });
+                            }
+                        }
+                    }
 
                     // Auto-pin error results
                     // Note: assemble() prepends a state message when state is non-empty,

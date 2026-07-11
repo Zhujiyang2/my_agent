@@ -3,11 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import net from 'node:net';
 import { createPathPolicy } from './path-policy';
-import { isBwrapAvailable, executeInBwrap } from './bwrap-executor';
+import { isBwrapAvailable, buildBwrapCommand } from './bwrap-executor';
 import { isDockerCommand, createDockerValidator } from './docker-validator';
 import { createProxyServer } from './net-proxy';
 import type { SandboxConfig, SandboxStatus } from './types';
-import type { ToolResult } from '../tools/types';
 import { execSync, execFileSync } from 'node:child_process';
 
 let sandboxManager: SandboxManager | null = null;
@@ -21,10 +20,16 @@ export function getSandboxManager(): SandboxManager | null {
 }
 
 export interface SandboxManager {
-  execute(
+  /**
+   * Build the full command string that should be passed to TaskRegistry.spawn().
+   * Returns the sandbox-wrapped command line, or null if no wrapping is needed
+   * (i.e., the original command should be spawned directly).
+   */
+  buildCommand(
     command: string,
     options?: { workdir?: string; timeout?: number }
-  ): Promise<ToolResult>;
+  ): Promise<{ command: string; workdir: string }>;
+
   registerWritable(filePath: string): { ok: boolean; error?: string };
   unregisterWritable(filePath: string): void;
   getStatus(): SandboxStatus;
@@ -75,16 +80,18 @@ export function createSandboxManager(config: SandboxConfig): SandboxManager {
   });
 
   return {
-    async execute(
+    async buildCommand(
       command: string,
       options?: { workdir?: string; timeout?: number }
-    ): Promise<ToolResult> {
-      // Ensure proxy is running before executing
+    ): Promise<{ command: string; workdir: string }> {
+      // Ensure proxy is running
       await proxyPromise;
 
-      // If sandbox is disabled, execute directly
+      const workdir = options?.workdir ?? process.cwd();
+
+      // If sandbox is disabled, return command as-is
       if (!config.enabled) {
-        return executeDirect(command, options);
+        return { command, workdir };
       }
 
       // Docker command: validate volume mounts first
@@ -94,54 +101,41 @@ export function createSandboxManager(config: SandboxConfig): SandboxManager {
           const reasons = validation.blocked
             .map((b) => `  - ${b.hostPath}: ${b.reason}`)
             .join('\n');
-          return {
-            content: `[SANDBOX BLOCKED] Docker volume mount(s) rejected:\n${reasons}`,
-            summary: `sandbox=blocked | ${validation.blocked.length} illegal mount(s)`,
-            exitCode: 1,
-            isError: true,
-          };
+          throw new Error(`[SANDBOX BLOCKED] Docker volume mount(s) rejected:\n${reasons}`);
         }
+        return { command, workdir };
       }
 
       // Check socat availability for network isolation
       if (!socatAvailable) {
         if (config.fallback_to_warn) {
-          const result = executeDirect(command, options);
-          result.content =
-            '[SANDBOX WARNING] socat is not available — cannot isolate network. ' +
-            'Command executed without network isolation.\n' +
-            'Install socat: apt install socat / dnf install socat\n\n' +
-            result.content;
-          result.summary = 'sandbox=warn | ' + result.summary;
-          return result;
+          return {
+            command: `echo '[SANDBOX WARNING] socat is not available — cannot isolate network.' && ${command}`,
+            workdir,
+          };
         }
-        return executeDirect(command, options);
+        return { command, workdir };
       }
 
-      // Check bwrap availability fresh on each execute call
+      // Check bwrap availability
       const bwrapAvailable = isBwrapAvailable();
 
-      // If bwrap is unavailable, fall back to direct execution
       if (!bwrapAvailable) {
         if (config.fallback_to_warn) {
-          const result = executeDirect(command, options);
-          result.content =
-            '[SANDBOX WARNING] bwrap is not available on this system. ' +
-            'Command executed without filesystem isolation.\n' +
-            'Install bubblewrap: apt install bubblewrap / dnf install bubblewrap\n\n' +
-            result.content;
-          result.summary = 'sandbox=warn | ' + result.summary;
-          result.keyOutput = result.keyOutput
-            ? 'bwrap not available — running without sandbox\n' + result.keyOutput
-            : 'bwrap not available — running without sandbox';
-          return result;
+          return {
+            command: `echo '[SANDBOX WARNING] bwrap is not available on this system.' && ${command}`,
+            workdir,
+          };
         }
-        return executeDirect(command, options);
+        return { command, workdir };
       }
 
-      // Assign a unique port for the per-command socat forwarder
+      // Build bwrap command with proxy
       const proxyPort = await findFreePort();
-      return executeInBwrap(command, policy, { ...options, proxyPort });
+      const args = buildBwrapCommand(command, policy, { proxyPort });
+      const bwrapCmd = args.map((a) => (a.includes(' ') ? `"${a}"` : a)).join(' ');
+
+      return { command: bwrapCmd, workdir };
     },
 
     registerWritable(filePath: string): { ok: boolean; error?: string } {
@@ -186,62 +180,4 @@ export function createSandboxManager(config: SandboxConfig): SandboxManager {
       await proxy.stop();
     },
   };
-}
-
-function executeDirect(
-  command: string,
-  options?: { workdir?: string; timeout?: number }
-): ToolResult {
-  try {
-    const stdout = execSync(command, {
-      cwd: options?.workdir ?? process.cwd(),
-      timeout: options?.timeout ?? 60_000,
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-      shell: process.platform === 'win32'
-        ? (process.env.ComSpec || 'cmd.exe')
-        : (process.env.SHELL || '/bin/sh'),
-    });
-    const trimmed = stdout.trim();
-    return {
-      content: trimmed ? `${trimmed}\nexit code: 0` : 'exit code: 0',
-      summary: `exit=0 | ${trimmed.slice(0, 80)}`,
-      exitCode: 0,
-      keyOutput: trimmed.slice(0, 300),
-    };
-  } catch (e: unknown) {
-    const err = e as NodeJS.ErrnoException & {
-      stdout?: Buffer | string;
-      stderr?: Buffer | string;
-      status?: number;
-      killed?: boolean;
-    };
-    if (err.killed) {
-      const partial = (
-        (typeof err.stdout === 'string' ? err.stdout : err.stdout?.toString('utf-8') ?? '') +
-        '\n' +
-        (typeof err.stderr === 'string' ? err.stderr : err.stderr?.toString('utf-8') ?? '')
-      ).trim();
-      return {
-        content: partial
-          ? partial + '\n[TRUNCATED: command timed out]'
-          : '[TRUNCATED: command timed out, no output captured]',
-        summary: 'exit=timeout | command timed out',
-        exitCode: undefined,
-        keyOutput: partial?.slice(0, 300),
-        isError: true,
-      };
-    }
-    const stdout = typeof err.stdout === 'string' ? err.stdout : err.stdout?.toString('utf-8') ?? '';
-    const stderr = typeof err.stderr === 'string' ? err.stderr : err.stderr?.toString('utf-8') ?? '';
-    const out = [stdout, stderr].filter(Boolean).join('\n');
-    const code = err.status ?? 1;
-    return {
-      content: (out || err.message) + `\nexit code: ${code}`,
-      summary: `exit=${code} | ${(out || err.message).slice(0, 80)}`,
-      exitCode: code,
-      keyOutput: out.slice(0, 300),
-      isError: true,
-    };
-  }
 }
