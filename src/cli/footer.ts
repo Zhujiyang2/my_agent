@@ -30,7 +30,7 @@ export function createFooter() {
 
   /** Bottom frame: separator + hints + messages (printed after Enter, before LLM output) */
   function render(): string {
-    const width = process.stdout.columns ?? 80;
+    const width = process.stdout.columns || 80;
     const sep = '─'.repeat(width);
 
     const lines = [sep, HINT];
@@ -42,7 +42,7 @@ export function createFooter() {
 
   /** Top separator only (printed before rl.prompt()) */
   function renderSeparator(): string {
-    const width = process.stdout.columns ?? 80;
+    const width = process.stdout.columns || 80;
     return '─'.repeat(width);
   }
 
