@@ -146,6 +146,8 @@ function buildBwrapCommand(
     `export HTTPS_PROXY=http://127.0.0.1:${port}; ` +
     `export http_proxy=http://127.0.0.1:${port}; ` +
     `export https_proxy=http://127.0.0.1:${port}; ` +
+    `export no_proxy=localhost,127.0.0.1,.local; ` +
+    `export NO_PROXY=localhost,127.0.0.1,.local; ` +
     command + '; ' +
     'EXIT_CODE=$?; ' +
     'cleanup; ' +

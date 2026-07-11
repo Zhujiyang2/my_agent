@@ -14,6 +14,7 @@ description: 单节点vLLM-Ascend推理服务启动 — Docker容器部署、NPU
 - **只问必要信息**：仅当用户未提供时才询问镜像名和模型权重路径。其余使用默认最优配置，不主动询问额外参数
 - **部署指导优先**：优先从容器内 `/vllm-workspace` 探索 vllm/vllm-ascend 源码仓的部署文档；若镜像内没有代码仓，则根据自己的知识构造启动命令
 - **所有 NPU 卡必须可见**：检测宿主机所有 `davinciX` 设备并全部映射进容器（包括配套设备 `davinci_manager`、`devmm_svm`、`hisi_hdc`）
+- **镜像自包含**：CANN、torch、vllm 等运行环境全在镜像内，与宿主机上的版本无关。不要对比宿主机和容器内的软件版本——没有意义
 - **错误自动诊断**：任何阶段失败，立即分析 `docker logs`、容器状态、NPU 可见性等，给出具体原因和修复建议
 
 ## 执行流程
@@ -32,6 +33,8 @@ description: 单节点vLLM-Ascend推理服务启动 — Docker容器部署、NPU
 
 将所有 `davinciX` 卡及配套设备（`davinci_manager`、`devmm_svm`、`hisi_hdc`）通过 `--device` 映射进容器。建议挂载 `/usr/local/Ascend` 以复用宿主 CANN 工具。
 
+**关键：** 如果用户指定了要用的 NPU 卡（如"用卡4"），必须在 `docker run` 时通过 `-e ASCEND_RT_VISIBLE_DEVICES=<卡索引>` 指定，否则应用会默认用卡 0。等价于 CUDA 的 `CUDA_VISIBLE_DEVICES`。用户未指定则默认所有卡可见。
+
 ### Phase 3: 查阅部署指导
 
 探索容器内 `/vllm-workspace` 目录（vllm/vllm-ascend 源码仓），自行判断需要读取哪些部署文档。
@@ -48,15 +51,15 @@ description: 单节点vLLM-Ascend推理服务启动 — Docker容器部署、NPU
 
 启动后检查容器是否退出，若 `Exited` 则直接进入 Phase 7。
 
-### Phase 5: 监控服务就绪（从宿主机）
+### Phase 5: 监控服务就绪
 
-轮询 `curl -s -o /dev/null -w "%{http_code}" http://localhost:<port>/health`，每 5 秒一次，最长等 5 分钟。
+Phase 4 已在后台执行 `docker logs -f <容器名> > ./output/vllm_service_<时间戳>.log 2>&1 &`。
 
-**关键：每轮询 3 次（约 15 秒）输出一次进度**（如 "⏳ 等待服务就绪 (15s/300s)..."），让用户知道程序没有卡死。
+**只需盯日志文件**，等待出现 "Application startup complete" 或 "Uvicorn running" 标记即表示服务就绪。最长等 3 小时。
 
-curl 在服务未就绪时必然连接失败（返回 000 或报错）——这是正常的。**必须**在脚本中用 `2>/dev/null` 抑制 stderr、用 `|| true` 兜底，**严禁**将单次 curl 的报错暴露给用户。只有 HTTP 200 才是就绪。
+每 1 分钟左右 `tail` 一次日志文件末尾，向用户报告最新一行日志（让用户看到进度），直到就绪标记出现。
 
-超时后检查 `docker logs` 中是否有 "Application startup complete" / "Uvicorn running" 等标记。无标记 → Phase 7。
+超时仍未就绪 → Phase 7。
 
 ### Phase 6: 验证推理
 
