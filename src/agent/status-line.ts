@@ -112,7 +112,8 @@ export function createStatusLine(opts: StatusLineOptions = {}) {
     // Clear any remaining status lines
     if (lastLineCount > 0) {
       for (let i = 0; i < lastLineCount; i++) {
-        output.write('\x1b[1A\x1b[2K');
+        readline.moveCursor(output, 0, -1);
+        readline.clearLine(output, 0);
       }
       lastLineCount = 0;
     }
