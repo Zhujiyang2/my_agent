@@ -120,4 +120,23 @@ describe('createFooter', () => {
       expect(result).toContain('─'.repeat(80));
     });
   });
+
+  describe('frameLineCount', () => {
+    it('returns 3 when no messages (topSep 1 + bottomSep 1 + hint 1)', () => {
+      expect(footer.frameLineCount()).toBe(3);
+    });
+
+    it('includes message lines in count', () => {
+      footer.upsert({ id: 'job-1', icon: '✓', text: 'cmd: done' });
+      // topSep(1) + bottomSep(1) + hint(1) + msg(1) = 4
+      expect(footer.frameLineCount()).toBe(4);
+    });
+
+    it('includes multiple messages', () => {
+      footer.upsert({ id: 'job-1', icon: '✓', text: 'cmd1: done' });
+      footer.upsert({ id: 'job-2', icon: '✗', text: 'cmd2: failed' });
+      // topSep(1) + bottomSep(1) + hint(1) + msgs(2) = 5
+      expect(footer.frameLineCount()).toBe(5);
+    });
+  });
 });

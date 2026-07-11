@@ -46,9 +46,17 @@ export function createFooter() {
     return '─'.repeat(width);
   }
 
+  /** Total lines in the frame (top sep + bottom content). Used by InputLine to
+   *  calculate cursor-up offset after rendering the full frame. */
+  function frameLineCount(): number {
+    // top separator = 1 line
+    // bottom.render() = separator(1) + hint(1) + messages
+    return 1 + 1 + 1 + messages.length;
+  }
+
   function clear(): void {
     messages.length = 0;
   }
 
-  return { upsert, remove, render, renderSeparator, clear };
+  return { upsert, remove, render, renderSeparator, clear, frameLineCount };
 }
