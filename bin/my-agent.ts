@@ -160,6 +160,21 @@ async function main(): Promise<void> {
     });
   });
 
+  // Render prompt frame: top sep → prompt → bottom sep → hints/messages
+  function renderFrame(): void {
+    const width = process.stdout.columns ?? 80;
+    const topSep = '─'.repeat(width);
+    const bottom = footer.render();
+    const bottomLines = bottom.split('\n').length;
+
+    console.log(topSep);
+    rl.prompt();
+    process.stdout.write('\n' + bottom);
+    // Move cursor back up to the prompt line
+    readline.moveCursor(process.stdout, 0, -(bottomLines + 1));
+    readline.cursorTo(process.stdout, 2);
+  }
+
   rl.prompt();
 
   // Ctrl+O toggles task status-line expand/collapse
@@ -175,8 +190,7 @@ async function main(): Promise<void> {
       currentController = null;
       console.log(formatInfo('\n  Interrupted'));
     }
-    console.log(footer.render());
-    rl.prompt();
+    renderFrame();
   });
 
   rl.on('line', async (line: string) => {
@@ -184,8 +198,7 @@ async function main(): Promise<void> {
 
     const input = line.trim();
     if (!input) {
-      console.log(footer.render());
-      rl.prompt();
+      renderFrame();
       return;
     }
 
@@ -218,8 +231,7 @@ async function main(): Promise<void> {
     }
 
     if (result.action === 'continue') {
-      console.log(footer.render());
-      rl.prompt();
+      renderFrame();
       return;
     }
 
@@ -240,8 +252,7 @@ async function main(): Promise<void> {
       currentController = null;
     }
 
-    console.log(footer.render());
-    rl.prompt();
+    renderFrame();
   });
 
   rl.on('close', () => {
