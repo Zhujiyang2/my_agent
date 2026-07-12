@@ -17,7 +17,7 @@ const DEFAULT_RETRYABLE_STATUSES = [429, 502, 503, 504];
 const DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
 
 export interface RetryOptions {
-  /** Maximum number of retry attempts (default: 5). */
+  /** Maximum number of retry attempts (default: 10). */
   maxRetries?: number;
   /** Base delay in ms for exponential backoff (default: 1000). */
   baseDelayMs?: number;
@@ -33,6 +33,11 @@ export interface RetryOptions {
    * Return true to retry.
    */
   shouldRetry?: (error: unknown, attempt: number, response?: Response) => boolean;
+  /**
+   * Called before each retry with (attempt, maxRetries, delayMs, reason).
+   * Use to show progress (e.g. write to stderr). Not called on the final attempt.
+   */
+  onRetry?: (attempt: number, maxRetries: number, delayMs: number, reason: string) => void;
 }
 
 export interface TimeoutOptions {
@@ -234,6 +239,11 @@ export async function fetchWithRetry(
         const retryAfter = parseRetryAfter(response.headers.get('Retry-After'));
         const delay = retryAfter ?? calculateBackoff(attempt, baseDelayMs, maxDelayMs);
         lastError = new Error(`HTTP ${response.status}`);
+        const reason = `HTTP ${response.status}`;
+        init.retry?.onRetry?.(attempt + 1, maxRetries, delay, reason);
+        process.stderr.write(
+          `\x1b[33m⚠ Retry ${attempt + 1}/${maxRetries}: ${reason}, waiting ${(delay / 1000).toFixed(1)}s...\x1b[0m\n`,
+        );
         await sleep(delay);
         continue;
       }
@@ -262,6 +272,14 @@ export async function fetchWithRetry(
 
       if (retryable && attempt < maxRetries) {
         const delay = calculateBackoff(attempt, baseDelayMs, maxDelayMs);
+        const reason =
+          error instanceof DOMException && error.name === 'TimeoutError'
+            ? 'timeout'
+            : 'connection lost';
+        init.retry?.onRetry?.(attempt + 1, maxRetries, delay, reason);
+        process.stderr.write(
+          `\x1b[33m⚠ Retry ${attempt + 1}/${maxRetries}: ${reason}, waiting ${(delay / 1000).toFixed(1)}s...\x1b[0m\n`,
+        );
         await sleep(delay);
         continue;
       }
