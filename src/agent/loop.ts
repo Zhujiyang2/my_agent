@@ -78,7 +78,7 @@ export function createAgent(config: Config, options: AgentOptions = {}): AgentSe
 
         contextManager.append({ role: 'user', content: input });
 
-        const maxRounds = config.tools.max_loop_rounds;
+        const maxRounds = config.tools.max_loop_rounds || Infinity;
         const maxConsecutiveFailures = config.tools.max_consecutive_failures;
         const allTools = registry.getAll();
         const toolDefs = allTools.length > 0 ? toolsToOpenAI(allTools) : undefined;
