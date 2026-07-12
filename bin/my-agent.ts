@@ -254,11 +254,11 @@ async function main(): Promise<void> {
     }
 
     // After LLM output, cursor may be mid-line. Ensure frame starts cleanly.
+    // Resume status-line BEFORE renderFrame so the frame's \x1b[0J clears
+    // any stale status output before redrawing on top.
     process.stdout.write('\n');
-    inputLine.renderFrame();
-
-    // Resume status-line refreshes
     statusLine.resume();
+    inputLine.renderFrame();
   }
 
   // Unified keypress handler: dispatch by key
