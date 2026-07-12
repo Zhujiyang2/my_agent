@@ -3,6 +3,7 @@
 export const HIGH_RISK_PATTERNS: RegExp[] = [
   // File destruction
   /(?:^|\s)rm\b/,
+  /(?:^|\s)rmdir\b/,
   /(?:^|\s)dd\b/,
   /(?:^|\s)mkfs\b/,
   /(?:^|\s)shred\b/,

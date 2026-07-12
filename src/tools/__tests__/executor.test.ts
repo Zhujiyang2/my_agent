@@ -3,8 +3,10 @@ import { describe, it, expect } from 'vitest';
 import { isHighRisk, HIGH_RISK_PATTERNS } from '../executor';
 
 describe('isHighRisk', () => {
-  it('detects file destruction: rm, dd, mkfs, shred', () => {
+  it('detects file destruction: rm, rmdir, dd, mkfs, shred', () => {
     expect(isHighRisk('rm -rf /data/*')).toBe(true);
+    expect(isHighRisk('rmdir /tmp/empty-dir')).toBe(true);
+    expect(isHighRisk('rmdir -p /path/to/nested/dirs')).toBe(true);
     expect(isHighRisk('dd if=/dev/zero of=/dev/sda')).toBe(true);
     expect(isHighRisk('mkfs.ext4 /dev/sdb')).toBe(true);
     expect(isHighRisk('shred -u secret.txt')).toBe(true);
