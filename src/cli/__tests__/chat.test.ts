@@ -20,9 +20,9 @@ describe('WELCOME_ART', () => {
 describe('formatWelcome', () => {
   it('returns the welcome message with art', () => {
     const result = formatWelcome();
-    expect(result).toContain('My Agent');
+    expect(result).toContain('FAE Agent');
     expect(result).toContain('┌──');
-    expect(result).toContain('AI-powered coding assistant');
+    expect(result).toContain('Your powerful AI assistant');
   });
 });
 

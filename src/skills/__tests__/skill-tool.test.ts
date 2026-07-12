@@ -128,7 +128,10 @@ describe('loadSkills', () => {
       expect(tool).toBeDefined();
       expect(tool!.parameters.properties.name.enum).toEqual(['my-skill']);
       expect(tool!.description).toContain('my-skill - A quoted description');
-      expect(tool!.description).not.toContain('"');
+      // Strip only removes surrounding quotes from frontmatter values;
+      // the description template contains legitimate Chinese quotes (e.g. "检查NPU")
+      expect(tool!.description).toContain('A quoted description');
+      expect(tool!.description).not.toContain('"A quoted description"');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
