@@ -155,17 +155,25 @@ async function main(): Promise<void> {
   inputLine.renderFrame();
 
   // Set up safety confirmation — temporarily leave raw mode for rl.question()
+  // Prevent keypress events during confirmation from leaking into the agent loop
+  let confirming = false;
+
   setExecutorCallbacks({
     onConfirm: async (command: string, category: string) => {
-      process.stdout.write(promptConfirm(command, category) + '\n');
-      // Exit raw mode so rl.question() gets 'line' events
-      if (process.stdin.isTTY) process.stdin.setRawMode(false);
-      const answer = await new Promise<string>((resolve) => {
-        rl.question('> ', resolve);
-      });
-      // Back to raw mode for InputLine
-      if (process.stdin.isTTY) process.stdin.setRawMode(true);
-      return answer.trim().toLowerCase().startsWith('y');
+      confirming = true;
+      try {
+        process.stdout.write(promptConfirm(command, category) + '\n');
+        // Exit raw mode so rl.question() gets 'line' events
+        if (process.stdin.isTTY) process.stdin.setRawMode(false);
+        const answer = await new Promise<string>((resolve) => {
+          rl.question('> ', resolve);
+        });
+        // Back to raw mode for InputLine
+        if (process.stdin.isTTY) process.stdin.setRawMode(true);
+        return answer.trim().toLowerCase().startsWith('y');
+      } finally {
+        confirming = false;
+      }
     },
   });
 
@@ -258,8 +266,6 @@ async function main(): Promise<void> {
     if (!key) return;
 
     // Ctrl+O: toggle task status-line expand/collapse.
-    // Status-line writes to stderr, which can move the shared terminal cursor.
-    // Re-render the frame afterwards to restore correct cursor position.
     if (key.ctrl && !key.meta && key.name === 'o') {
       statusLine.toggle();
       inputLine.renderFrame();
@@ -277,6 +283,10 @@ async function main(): Promise<void> {
       statusLine.resume();
       return;
     }
+
+    // During confirmation, swallow all input — rl.question handles it.
+    // Prevents confirmation keystrokes from being replayed as agent input.
+    if (confirming) return;
 
     // Enter: submit input
     if (key.name === 'return' || key.name === 'enter') {
