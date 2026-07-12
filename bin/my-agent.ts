@@ -272,15 +272,18 @@ async function main(): Promise<void> {
       return;
     }
 
-    // Ctrl+C: abort current LLM call
+    // Ctrl+C: abort current LLM call.
+    // When an LLM call is active, just abort — handleSubmit's cleanup path
+    // will render the frame and resume the status-line afterwards.
+    // When idle, reset the input line.
     if (key.ctrl && key.name === 'c') {
       if (currentController) {
         currentController.abort();
         currentController = null;
         console.log(formatInfo('\n  Interrupted'));
+      } else {
+        inputLine.reset();
       }
-      inputLine.reset();
-      statusLine.resume();
       return;
     }
 
@@ -307,9 +310,9 @@ async function main(): Promise<void> {
       currentController.abort();
       currentController = null;
       console.log(formatInfo('\n  Interrupted'));
+    } else {
+      inputLine.reset();
     }
-    inputLine.reset();
-    statusLine.resume();
   });
 
   rl.on('close', () => {
