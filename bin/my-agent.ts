@@ -254,10 +254,15 @@ async function main(): Promise<void> {
     }
 
     // After LLM output, cursor may be mid-line. Ensure frame starts cleanly.
-    // Resume status-line BEFORE renderFrame so the frame's \x1b[0J clears
-    // any stale status output before redrawing on top.
+    // Resume status-line first (writes to stderr), then move cursor up past
+    // the status output so renderFrame's \x1b[0J clears it along with
+    // anything below before redrawing the frame.
     process.stdout.write('\n');
     statusLine.resume();
+    const slCount = statusLine.getLastLineCount();
+    if (slCount > 0) {
+      process.stdout.write(`\x1b[${slCount}A`);
+    }
     inputLine.renderFrame();
   }
 

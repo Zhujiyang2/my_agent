@@ -140,7 +140,11 @@ export function createStatusLine(opts: StatusLineOptions = {}) {
     timer = setInterval(refresh, intervalMs);
   }
 
-  return { start, stop, pause, resume, refresh, toggle, renderStatusLine, extractProgress };
+  function getLastLineCount(): number {
+    return lastLineCount;
+  }
+
+  return { start, stop, pause, resume, refresh, toggle, renderStatusLine, extractProgress, getLastLineCount };
 }
 
 export type StatusLine = ReturnType<typeof createStatusLine>;
