@@ -4,6 +4,8 @@ import type { FooterMessage } from '../footer';
 
 // Minimal footer stub matching the real interface
 function createStubFooter(messages: FooterMessage[] = []) {
+  let taskLines: string[] = [];
+  let statusLine = '';
   return {
     messages,
     upsert(msg: FooterMessage) {
@@ -13,8 +15,14 @@ function createStubFooter(messages: FooterMessage[] = []) {
     },
     remove(_id: string) {},
     clear() { messages.length = 0; },
+    setTasks(lines: string[]) { taskLines = lines; },
+    clearTasks() { taskLines = []; },
+    setStatusLine(line: string) { statusLine = line; },
     renderSeparator() {
       return '─'.repeat(80);
+    },
+    renderStatusLine() {
+      return statusLine;
     },
     render() {
       const sep = '─'.repeat(80);
@@ -22,10 +30,14 @@ function createStubFooter(messages: FooterMessage[] = []) {
       for (const msg of messages) {
         lines.push(`${msg.icon} ${msg.text}`);
       }
+      for (const tl of taskLines) {
+        lines.push(tl);
+      }
       return lines.join('\n');
     },
     frameLineCount() {
-      return 3 + messages.length;
+      const slc = statusLine ? 1 : 0;
+      return slc + 3 + messages.length + taskLines.length;
     },
   };
 }
@@ -217,6 +229,67 @@ describe('createInputLine', () => {
       expect(output).toContain('> hi');
       expect(output).toContain('─'.repeat(80));
       expect(output).toContain('/exit to quit');
+    });
+
+    it('expands with task lines below hint when setTasks is called', () => {
+      const il = createInputLine({ footer, onWrite });
+      il.onKeypress('h', { name: 'h', ctrl: false, meta: false, shift: false });
+      onWrite.mockClear();
+
+      // Simulate Ctrl+O: add task lines, then re-render
+      footer.setTasks([
+        '\x1b[2m┃ ⚡ a1b2c3d4e5f6 30s echo hello\x1b[0m',
+        '\x1b[2m┃ Ctrl+O to collapse\x1b[0m',
+      ]);
+      il.renderFrame();
+
+      const output = onWrite.mock.calls.map((c: string[]) => c[0]).join('');
+      // Task lines should appear after hint
+      const hintIdx = output.indexOf('/exit to quit');
+      const taskIdx = output.indexOf('echo hello');
+      const collapseIdx = output.indexOf('Ctrl+O to collapse');
+      expect(hintIdx).toBeLessThan(taskIdx);
+      expect(taskIdx).toBeLessThan(collapseIdx);
+      // Should render correctly (clear + full frame)
+      expect(output).toContain('\x1b[0J');
+    });
+
+    it('clears task lines when clearTasks is called', () => {
+      const il = createInputLine({ footer, onWrite });
+      il.onKeypress('h', { name: 'h', ctrl: false, meta: false, shift: false });
+      // First expand
+      footer.setTasks(['\x1b[2m┃ ⚡ echo hello\x1b[0m']);
+      il.renderFrame();
+      onWrite.mockClear();
+
+      // Then collapse
+      footer.clearTasks();
+      il.renderFrame();
+
+      const output = onWrite.mock.calls.map((c: string[]) => c[0]).join('');
+      expect(output).not.toContain('echo hello');
+      expect(output).toContain('\x1b[1A'); // clear from top sep position
+    });
+
+    it('handles toggling with status line present', () => {
+      const il = createInputLine({ footer, onWrite });
+      il.onKeypress('a', { name: 'a', ctrl: false, meta: false, shift: false });
+      // Simulate status timer adding status line
+      footer.setStatusLine('\x1b[2m┃ ⚡ 1 running\x1b[0m');
+      il.renderFrame(); // frame now has status line
+      onWrite.mockClear();
+
+      // Now toggle tasks on (Ctrl+O)
+      footer.setTasks(['\x1b[2m┃ ⚡ a1b2c3d4e5f6 30s npm test\x1b[0m', '\x1b[2m┃ Ctrl+O to collapse\x1b[0m']);
+      il.renderFrame();
+
+      const output = onWrite.mock.calls.map((c: string[]) => c[0]).join('');
+      // Status line should appear above top sep
+      expect(output).toContain('⚡ 1 running');
+      // Task line should appear in output
+      expect(output).toContain('npm test');
+      // Clear should happen from correct position (status line)
+      expect(output).toContain('\x1b[2A'); // moves up 2 lines (status + top sep)
     });
   });
 });

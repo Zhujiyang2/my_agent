@@ -54,6 +54,8 @@ export function createInputLine(opts: InputLineOpts): InputLine {
   let line = '';
   let cursor = 0;
   let isFrameVisible = false;
+  let frameTopLines = 1; // lines above the input line (top sep=1 + optional status)
+  let rendering = false; // guard against re-entrant calls (timer + user input)
 
   function getLine(): string {
     return line;
@@ -66,6 +68,7 @@ export function createInputLine(opts: InputLineOpts): InputLine {
   /** Render the full frame with input line between separators.
    *
    *  Layout:
+   *    ┃ ⚡ N running    ← status line (collapsed task indicator, optional)
    *    ────────────────  ← top sep
    *    > {line}█         ← input line (cursor here)
    *    ────────────────  ← bottom sep
@@ -77,37 +80,51 @@ export function createInputLine(opts: InputLineOpts): InputLine {
    *  conflicting cursor state — we are the sole owner of stdout positioning.
    */
   function renderFrame(): void {
-    const topSep = footer.renderSeparator();
-    const bottom = footer.render();
-    const bottomLines = bottom.split('\n').length;
+    // Guard against re-entrant calls from timer + user input firing together.
+    if (rendering) return;
+    rendering = true;
+    try {
+      const statusLine = footer.renderStatusLine();
+      const topSep = footer.renderSeparator();
+      const bottom = footer.render();
+      const bottomLines = bottom.split('\n').length;
+      const slCount = statusLine ? 1 : 0;
 
-    if (isFrameVisible) {
-      // Old frame is visible. Cursor is on the input line.
-      // Move to column 0, then up 1 row to the old top separator.
-      // Clear from there to end of screen, wiping the entire old frame.
-      onWrite('\r');
-      onWrite('\x1b[1A');
-      onWrite('\x1b[0J');
-    } else {
-      // No frame visible (first render, or after LLM output).
-      // Go to column 0, then clear from cursor position down.
-      onWrite('\r');
-      onWrite('\x1b[0J');
+      if (isFrameVisible) {
+        // Old frame is visible. Move to col 0, clear current line, then move
+        // up past the old frame's top and clear everything below. The \x1b[2K
+        // ensures any partial content on the current line is erased before
+        // clearing downward, preventing artifacts from rapid re-renders.
+        onWrite('\r');
+        onWrite('\x1b[2K');
+        onWrite(`\x1b[${frameTopLines}A`);
+        onWrite('\x1b[0J');
+      } else {
+        // No frame visible (first render, or after LLM output).
+        onWrite('\r');
+        onWrite('\x1b[0J');
+      }
+
+      // Write frame top-to-bottom
+      if (statusLine) {
+        onWrite(statusLine + '\n');
+      }
+      onWrite(topSep + '\n');
+      onWrite(`\x1b[36m> ${line}\x1b[0m\n`);
+      onWrite(bottom + '\n');
+
+      // Cursor is now after the trailing '\n' from `bottom + '\n'`.
+      // Move up past the trailing blank + bottom content to the input line.
+      onWrite(`\x1b[${bottomLines + 1}A`);
+      // Move right: "> " (2 cols) + display width of characters before cursor
+      const offset = 2 + displayWidth(line.slice(0, cursor));
+      onWrite(`\x1b[${offset}C`);
+
+      frameTopLines = 1 + slCount; // save for next redraw
+      isFrameVisible = true;
+    } finally {
+      rendering = false;
     }
-
-    // Write frame top-to-bottom
-    onWrite(topSep + '\n');
-    onWrite(`\x1b[36m> ${line}\x1b[0m\n`);
-    onWrite(bottom + '\n');
-
-    // Cursor is now after the trailing '\n' from `bottom + '\n'`.
-    // Move up past the trailing blank + bottom content to the input line.
-    onWrite(`\x1b[${bottomLines + 1}A`);
-    // Move right: "> " (2 cols) + display width of characters before cursor
-    const offset = 2 + displayWidth(line.slice(0, cursor));
-    onWrite(`\x1b[${offset}C`);
-
-    isFrameVisible = true;
   }
 
   function onKeypress(
@@ -150,16 +167,17 @@ export function createInputLine(opts: InputLineOpts): InputLine {
   function submit(): string {
     const submitted = line;
     if (submitted.trim().length > 0) {
-      // Wipe the old frame: move to col 0 of input line, up 1 to top sep,
-      // then clear everything from top sep to end of screen.
+      // Wipe the old frame: move to col 0 of input line, then up past
+      // the top separator and optional status line. Clear from there down.
       onWrite('\r');
-      onWrite('\x1b[1A');
+      onWrite(`\x1b[${frameTopLines}A`);
       onWrite('\x1b[0J');
       // Gray background echo where the frame used to be
       onWrite(`\x1b[48;5;237m\x1b[36m> ${submitted}\x1b[0m\n`);
     }
     line = '';
     cursor = 0;
+    frameTopLines = 1;
     isFrameVisible = false;
     return submitted;
   }
