@@ -38,6 +38,7 @@ import { createStatusLine } from '../src/agent/status-line.js';
 import { createFooter } from '../src/cli/footer.js';
 import { createInputLine } from '../src/cli/input-line.js';
 import { resolveProjectPath } from '../src/paths.js';
+import { formatTaskLines } from '../src/cli/task-formatter.js';
 
 const nodeVersion = process.versions.node.split('.').map(Number);
 if (nodeVersion[0] < 18) {
@@ -177,9 +178,42 @@ async function main(): Promise<void> {
     },
   });
 
-  // Start task status-line (stderr to avoid mixing with LLM output on stdout)
+  // Status line: used for extractProgress() helper and collapsed-mode rendering.
+  // Auto-refresh is handled via footer + renderFrame to avoid independent
+  // terminal writes clobbering the frame layout.
   const statusLine = createStatusLine({ intervalMs: 3000 });
-  statusLine.start();
+
+  // Manage status via footer so it stays in sync with the frame.
+  // Timer-based refresh updates the footer and re-renders the frame.
+  let statusTimer: ReturnType<typeof setInterval> | null = null;
+
+  function updateStatusFooter() {
+    const tasks = taskRegistry.list();
+    const active = tasks.filter(t => t.status === 'running');
+    if (active.length > 0) {
+      footer.setStatusLine(statusLine.renderStatusLine(tasks));
+    } else {
+      footer.setStatusLine('');
+    }
+  }
+
+  function startStatusTimer() {
+    if (statusTimer) return;
+    updateStatusFooter();
+    statusTimer = setInterval(() => {
+      updateStatusFooter();
+      inputLine.renderFrame();
+    }, 3000);
+  }
+
+  function stopStatusTimer() {
+    if (statusTimer) {
+      clearInterval(statusTimer);
+      statusTimer = null;
+    }
+  }
+
+  startStatusTimer();
 
   // Main submit handler — called when user presses Enter
   async function handleSubmit(): Promise<void> {
@@ -230,8 +264,9 @@ async function main(): Promise<void> {
     // action === 'send_to_agent'
     currentController = new AbortController();
 
-    // Pause status-line during LLM output to avoid stderr/stdout cursor interference
-    statusLine.pause();
+    // Pause status timer during LLM output to avoid frame re-renders
+    // interfering with streaming output.
+    stopStatusTimer();
 
     try {
       await agent.send(result.input, currentController.signal);
@@ -254,25 +289,30 @@ async function main(): Promise<void> {
     }
 
     // After LLM output, cursor may be mid-line. Ensure frame starts cleanly.
-    // Resume status-line first (writes to stderr), then move cursor up past
-    // the status output so renderFrame's \x1b[0J clears it along with
-    // anything below before redrawing the frame.
+    // Clear old footer messages, update status, and redraw the frame.
     process.stdout.write('\n');
-    statusLine.resume();
-    const slCount = statusLine.getLastLineCount();
-    if (slCount > 0) {
-      process.stdout.write(`\x1b[${slCount}A`);
-    }
+    footer.clear();
     inputLine.renderFrame();
+    startStatusTimer();
   }
 
   // Unified keypress handler: dispatch by key
+  let tasksExpanded = false;
+
   process.stdin.on('keypress', (_ch, key) => {
     if (!key) return;
 
-    // Ctrl+O: toggle task status-line expand/collapse.
+    // Ctrl+O: toggle task display in footer (below the hint line).
+    // Previously used statusLine.toggle() which rendered between agent output
+    // and the frame, causing cursor-positioning conflicts and overwriting agent
+    // output. Now rendered as part of the footer so renderFrame handles it naturally.
     if (key.ctrl && !key.meta && key.name === 'o') {
-      statusLine.toggle();
+      tasksExpanded = !tasksExpanded;
+      if (tasksExpanded) {
+        footer.setTasks(formatTaskLines(taskRegistry.list(), statusLine.extractProgress));
+      } else {
+        footer.clearTasks();
+      }
       inputLine.renderFrame();
       return;
     }
@@ -321,7 +361,7 @@ async function main(): Promise<void> {
   });
 
   rl.on('close', () => {
-    statusLine.stop();
+    stopStatusTimer();
     taskRegistry.destroy();
     subagentManager.destroy();
     mcpManager.destroy().catch(() => {});
