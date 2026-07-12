@@ -78,7 +78,7 @@ export function createAgent(config: Config, options: AgentOptions = {}): AgentSe
 
         contextManager.append({ role: 'user', content: input });
 
-        const maxRounds = config.tools.max_loop_rounds;
+        const maxRounds = config.tools.max_loop_rounds || Infinity;
         const maxConsecutiveFailures = config.tools.max_consecutive_failures;
         const allTools = registry.getAll();
         const toolDefs = allTools.length > 0 ? toolsToOpenAI(allTools) : undefined;
@@ -212,21 +212,15 @@ export function createAgent(config: Config, options: AgentOptions = {}): AgentSe
                                     if (completed.id !== taskId) return;
                                     cleanup();
 
-                                    const [stdout, stderr] = await Promise.all([
-                                        taskReg.readOutput(taskId, 'stdout', 200),
-                                        taskReg.readOutput(taskId, 'stderr', 200),
-                                    ]);
+                                    const output = await taskReg.readOutput(taskId, 200);
 
                                     const parts: string[] = [
                                         `Background task ${taskId} finished.`,
                                         `status: ${completed.status}`,
                                         `exit code: ${completed.exitCode}`,
                                     ];
-                                    if (stdout.trim()) {
-                                        parts.push(`\n--- stdout ---\n${stdout.slice(-2000)}`);
-                                    }
-                                    if (stderr.trim()) {
-                                        parts.push(`\n--- stderr ---\n${stderr.slice(-2000)}`);
+                                    if (output.trim()) {
+                                        parts.push(`\n--- output ---\n${output.slice(-2000)}`);
                                     }
 
                                     contextManager.append({

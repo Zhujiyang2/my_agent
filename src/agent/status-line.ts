@@ -1,17 +1,18 @@
 // src/agent/status-line.ts
 import type { Task } from '../tasks/types';
+import * as readline from 'node:readline';
 import { getTaskRegistry } from '../tasks/registry';
 
 export interface StatusLineOptions {
   /** Refresh interval in ms (default: 3000) */
   intervalMs?: number;
-  /** Output stream (default: process.stderr to avoid mixing with stdout) */
+  /** Output stream (default: process.stdout) */
   output?: NodeJS.WriteStream;
 }
 
 export function createStatusLine(opts: StatusLineOptions = {}) {
   const intervalMs = opts.intervalMs ?? 3000;
-  const output = opts.output ?? process.stderr;
+  const output = opts.output ?? process.stdout;
   let expanded = false;
   let timer: ReturnType<typeof setInterval> | null = null;
   let lastLineCount = 0;
@@ -26,17 +27,9 @@ export function createStatusLine(opts: StatusLineOptions = {}) {
     if (active.length === 0 && recent.length === 0) return '';
 
     if (!expanded) {
-      // Collapsed: single-line summary
-      const parts: string[] = [];
-      if (active.length > 0) {
-        parts.push(`⚡ ${active.length} running`);
-      }
-      if (recent.length > 0) {
-        const last = recent[0];
-        const icon = last.status === 'completed' ? '✓' : last.status === 'failed' ? '✗' : '•';
-        parts.push(`${icon} ${last.id.slice(0, 16)}: ${last.status}`);
-      }
-      return `\x1b[2m┃ ${parts.join(' │ ')}\x1b[0m`;
+      // Collapsed: only show running tasks
+      if (active.length === 0) return '';
+      return `\x1b[2m┃ ⚡ ${active.length} running\x1b[0m`;
     }
 
     // Expanded: one line per task
@@ -50,7 +43,8 @@ export function createStatusLine(opts: StatusLineOptions = {}) {
     for (const t of recent) {
       const elapsed = ((t.finishedAt ?? t.createdAt) - t.createdAt) / 1000;
       const icon = t.status === 'completed' ? '✓' : t.status === 'failed' ? '✗' : '•';
-      lines.push(`\x1b[2m┃ ${icon} ${t.id.slice(-12)} ${t.status} ${elapsed.toFixed(0)}s exit=${t.exitCode}\x1b[0m`);
+      const cmd = t.command.length > 60 ? t.command.slice(0, 57) + '...' : t.command;
+      lines.push(`\x1b[2m┃ ${icon} ${cmd}: ${t.status} (${elapsed.toFixed(0)}s)\x1b[0m`);
     }
     // Footer
     lines.push(`\x1b[2m┃ Ctrl+O to collapse\x1b[0m`);
@@ -91,9 +85,9 @@ export function createStatusLine(opts: StatusLineOptions = {}) {
 
     // Clear previous status lines
     if (lastLineCount > 0) {
-      // Move up and clear each line
       for (let i = 0; i < lastLineCount; i++) {
-        output.write('\x1b[1A\x1b[2K');
+        readline.moveCursor(output, 0, -1);
+        readline.clearLine(output, 0);
       }
     }
 
@@ -101,6 +95,11 @@ export function createStatusLine(opts: StatusLineOptions = {}) {
       output.write(line + '\n');
       lastLineCount = line.split('\n').length;
     } else {
+      // No new content — cursor was moved up by the clear loop above.
+      // Restore original cursor position so callers' relative positioning stays accurate.
+      for (let i = 0; i < lastLineCount; i++) {
+        readline.moveCursor(output, 0, 1);
+      }
       lastLineCount = 0;
     }
   }
@@ -119,13 +118,33 @@ export function createStatusLine(opts: StatusLineOptions = {}) {
     // Clear any remaining status lines
     if (lastLineCount > 0) {
       for (let i = 0; i < lastLineCount; i++) {
-        output.write('\x1b[1A\x1b[2K');
+        readline.moveCursor(output, 0, -1);
+        readline.clearLine(output, 0);
       }
       lastLineCount = 0;
     }
   }
 
-  return { start, stop, refresh, toggle, renderStatusLine, extractProgress };
+  /** Pause the refresh timer without clearing display. Use during LLM output. */
+  function pause(): void {
+    if (timer) {
+      clearInterval(timer);
+      timer = null;
+    }
+  }
+
+  /** Resume refresh timer after pause. */
+  function resume(): void {
+    if (timer) return;
+    refresh();
+    timer = setInterval(refresh, intervalMs);
+  }
+
+  function getLastLineCount(): number {
+    return lastLineCount;
+  }
+
+  return { start, stop, pause, resume, refresh, toggle, renderStatusLine, extractProgress, getLastLineCount };
 }
 
 export type StatusLine = ReturnType<typeof createStatusLine>;

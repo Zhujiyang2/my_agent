@@ -14,16 +14,12 @@ describe('spawnCommand', () => {
 
   it('normal command returns exitCode=0', async () => {
     fs.mkdirSync(TEST_DIR, { recursive: true });
-    const stdoutPath = path.join(TEST_DIR, 'test.stdout');
-    const stderrPath = path.join(TEST_DIR, 'test.stderr');
-    const exitPath = path.join(TEST_DIR, 'test.exit');
+    const outputPath = path.join(TEST_DIR, 'test.output');
 
     const { pid, promise } = spawnCommand({
       command: 'echo hello',
       taskId: 'test-001',
-      stdoutPath,
-      stderrPath,
-      exitFilePath: exitPath,
+      outputPath,
     });
 
     expect(pid).toBeGreaterThan(0);
@@ -40,65 +36,27 @@ describe('spawnCommand', () => {
     const { promise } = spawnCommand({
       command: 'exit 42',
       taskId: 'test-002',
-      stdoutPath: path.join(TEST_DIR, 's2.stdout'),
-      stderrPath: path.join(TEST_DIR, 's2.stderr'),
-      exitFilePath: path.join(TEST_DIR, 's2.exit'),
+      outputPath: path.join(TEST_DIR, 's2.output'),
     });
 
     const result = await promise;
     expect(result.exitCode).toBe(42);
   });
 
-  it('stdout is streamed to file', async () => {
+  it('stdout and stderr are streamed to single output file', async () => {
     fs.mkdirSync(TEST_DIR, { recursive: true });
-    const stdoutPath = path.join(TEST_DIR, 's3.stdout');
+    const outputPath = path.join(TEST_DIR, 's3.output');
 
     const { promise } = spawnCommand({
-      command: 'echo line1 && echo line2',
+      command: 'echo line1 && echo line2 && echo err-msg >&2',
       taskId: 'test-003',
-      stdoutPath,
-      stderrPath: path.join(TEST_DIR, 's3.stderr'),
-      exitFilePath: path.join(TEST_DIR, 's3.exit'),
+      outputPath,
     });
 
     await promise;
-    const content = fs.readFileSync(stdoutPath, 'utf-8');
+    const content = fs.readFileSync(outputPath, 'utf-8');
     expect(content).toContain('line1');
     expect(content).toContain('line2');
-  });
-
-  it('stderr is streamed to separate file', async () => {
-    fs.mkdirSync(TEST_DIR, { recursive: true });
-    const stderrPath = path.join(TEST_DIR, 's5.stderr');
-
-    const { promise } = spawnCommand({
-      command: 'echo err-msg >&2',
-      taskId: 'test-005',
-      stdoutPath: path.join(TEST_DIR, 's5.stdout'),
-      stderrPath,
-      exitFilePath: path.join(TEST_DIR, 's5.exit'),
-    });
-
-    await promise;
-    const content = fs.readFileSync(stderrPath, 'utf-8');
     expect(content).toContain('err-msg');
-  });
-
-  it('exit file is written on completion', async () => {
-    fs.mkdirSync(TEST_DIR, { recursive: true });
-    const exitPath = path.join(TEST_DIR, 's6.exit');
-
-    const { promise } = spawnCommand({
-      command: 'echo done',
-      taskId: 'test-006',
-      stdoutPath: path.join(TEST_DIR, 's6.stdout'),
-      stderrPath: path.join(TEST_DIR, 's6.stderr'),
-      exitFilePath: exitPath,
-    });
-
-    await promise;
-    expect(fs.existsSync(exitPath)).toBe(true);
-    const exitData = JSON.parse(fs.readFileSync(exitPath, 'utf-8'));
-    expect(exitData.exitCode).toBe(0);
   });
 });

@@ -6,7 +6,7 @@ import { filterProgressBars } from '../../tasks/types';
 export const lookupTaskTool: ToolDefinition = {
   name: 'lookup_task',
   description:
-    'Look up a background task by id. Returns current status, the last N lines of stdout/stderr, ' +
+    'Look up a background task by id. Returns current status, the last N lines of output, ' +
     'and the exit code if the task has finished. Use this to check on long-running commands.',
   parameters: {
     type: 'object',
@@ -40,14 +40,10 @@ export const lookupTaskTool: ToolDefinition = {
       };
     }
 
-    const [stdout, stderr] = await Promise.all([
-      reg.readOutput(taskId, 'stdout', tailLines),
-      reg.readOutput(taskId, 'stderr', tailLines),
-    ]);
+    const output = await reg.readOutput(taskId, tailLines);
 
     const elapsed = ((task.finishedAt ?? Date.now()) - task.createdAt) / 1000;
-    const filteredStdout = filterProgressBars(stdout);
-    const filteredStderr = filterProgressBars(stderr);
+    const filteredOutput = filterProgressBars(output);
 
     const parts: string[] = [
       `Task: ${task.id}`,
@@ -58,11 +54,8 @@ export const lookupTaskTool: ToolDefinition = {
       `Signal: ${task.signal ?? 'none'}`,
     ];
 
-    if (filteredStdout) {
-      parts.push(`\n--- stdout (last ${tailLines} lines) ---\n${filteredStdout}`);
-    }
-    if (filteredStderr) {
-      parts.push(`\n--- stderr (last ${tailLines} lines) ---\n${filteredStderr}`);
+    if (filteredOutput) {
+      parts.push(`\n--- output (last ${tailLines} lines) ---\n${filteredOutput}`);
     }
 
     const content = parts.join('\n');
@@ -70,7 +63,7 @@ export const lookupTaskTool: ToolDefinition = {
       content,
       summary: `${task.id}: ${task.status} | exit=${task.exitCode ?? '?'} | ${elapsed.toFixed(0)}s`,
       exitCode: task.status === 'failed' ? 1 : 0,
-      keyOutput: filteredStdout.slice(0, 300) || filteredStderr.slice(0, 300),
+      keyOutput: filteredOutput.slice(0, 300),
     };
   },
 };

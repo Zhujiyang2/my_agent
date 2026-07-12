@@ -73,6 +73,10 @@ function truncate(s: string, maxLen: number): string {
   return s.length <= maxLen ? s : s.slice(0, maxLen - 3) + '...';
 }
 
+export function formatEchoedInput(content: string): string {
+  return `\x1b[48;5;237m\x1b[36m> ${content}\x1b[0m`;
+}
+
 export function promptConfirm(command: string, _category: string): string {
   return [
     '\x1b[31m⚠ high risk command detected:\x1b[0m',

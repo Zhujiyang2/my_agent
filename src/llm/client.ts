@@ -1,6 +1,7 @@
 // src/llm/client.ts
 import type { Config } from '../config/types';
 import type { Message, ChatCompletionChunk, ToolCall } from './types';
+import { fetchWithRetry } from '../http/fetch-with-retry';
 
 export interface StreamResult {
   finishReason: string;
@@ -29,7 +30,7 @@ export async function chat(
     stream: false,
   };
 
-  const response = await fetch(url, {
+  const response = await fetchWithRetry(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -69,7 +70,7 @@ export async function chatStream(
     body.tools = tools;
   }
 
-  const response = await fetch(url, {
+  const response = await fetchWithRetry(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

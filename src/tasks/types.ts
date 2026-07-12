@@ -20,9 +20,7 @@ export interface Task {
   pid: number | null;
   exitCode: number | null;
   signal: string | null;
-  stdoutPath: string;
-  stderrPath: string;
-  exitFilePath: string;
+  outputPath: string;
   createdAt: number;
   finishedAt: number | null;
   timeoutMs: number | null;

@@ -17,9 +17,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     pid: 12345,
     exitCode: null,
     signal: null,
-    stdoutPath: path.join(TEST_DIR, 'jobs', 'job-test-001.stdout'),
-    stderrPath: path.join(TEST_DIR, 'jobs', 'job-test-001.stderr'),
-    exitFilePath: path.join(TEST_DIR, 'jobs', 'job-test-001.exit'),
+    outputPath: path.join(TEST_DIR, 'jobs', 'job-test-001.output'),
     createdAt: Date.now(),
     finishedAt: null,
     timeoutMs: null,
@@ -59,40 +57,35 @@ describe('TaskStore', () => {
   });
 
   it('appendOutput + readOutput roundtrip', async () => {
-    await store.appendOutput('job-test-001', 'stdout', 'line 1\n');
-    await store.appendOutput('job-test-001', 'stdout', 'line 2\n');
-    const output = await store.readOutput('job-test-001', 'stdout');
+    await store.appendOutput('job-test-001', 'line 1\n');
+    await store.appendOutput('job-test-001', 'line 2\n');
+    const output = await store.readOutput('job-test-001');
     expect(output).toContain('line 1');
     expect(output).toContain('line 2');
   });
 
   it('readOutput lines param returns last N lines', async () => {
     for (let i = 1; i <= 50; i++) {
-      await store.appendOutput('job-test-001', 'stdout', `line ${i}\n`);
+      await store.appendOutput('job-test-001', `line ${i}\n`);
     }
-    const output = await store.readOutput('job-test-001', 'stdout', 3);
+    const output = await store.readOutput('job-test-001', 3);
     const lines = output.trim().split('\n');
     expect(lines.length).toBe(3);
     expect(lines[0]).toContain('line 48');
     expect(lines[2]).toContain('line 50');
   });
 
-  it('writeExit + readExit roundtrip', async () => {
-    await store.writeExit('job-test-001', { exitCode: 0, signal: null, finishedAt: 1000 });
-    const exit = await store.readExit('job-test-001');
-    expect(exit).toEqual({ exitCode: 0, signal: null, finishedAt: 1000 });
+  it('readOutput returns empty string for missing file', async () => {
+    const output = await store.readOutput('nonexistent');
+    expect(output).toBe('');
   });
 
-  it('readExit returns null for missing file', async () => {
-    const exit = await store.readExit('nonexistent');
-    expect(exit).toBeNull();
-  });
-
-  it('stderr and stdout are independent', async () => {
-    await store.appendOutput('job-test-001', 'stdout', 'out\n');
-    await store.appendOutput('job-test-001', 'stderr', 'err\n');
-    expect(await store.readOutput('job-test-001', 'stdout')).toContain('out');
-    expect(await store.readOutput('job-test-001', 'stderr')).toContain('err');
+  it('output captures both stdout and stderr', async () => {
+    await store.appendOutput('job-test-001', 'out\n');
+    await store.appendOutput('job-test-001', 'err\n');
+    const output = await store.readOutput('job-test-001');
+    expect(output).toContain('out');
+    expect(output).toContain('err');
   });
 
   it('atomic write leaves no .tmp file', async () => {

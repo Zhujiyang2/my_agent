@@ -5,6 +5,7 @@ import {
   formatAssistantMessage,
   formatToolCall,
   promptConfirm,
+  formatEchoedInput,
   WELCOME_ART,
 } from '../chat';
 
@@ -19,9 +20,9 @@ describe('WELCOME_ART', () => {
 describe('formatWelcome', () => {
   it('returns the welcome message with art', () => {
     const result = formatWelcome();
-    expect(result).toContain('My Agent');
+    expect(result).toContain('FAE Agent');
     expect(result).toContain('┌──');
-    expect(result).toContain('AI-powered coding assistant');
+    expect(result).toContain('Your powerful AI assistant');
   });
 });
 
@@ -72,5 +73,24 @@ describe('formatToolCall', () => {
   it('handles empty args gracefully', () => {
     const result = formatToolCall('echo', {});
     expect(result).toContain('echo');
+  });
+});
+
+describe('formatEchoedInput', () => {
+  it('wraps user input with gray background', () => {
+    const result = formatEchoedInput('你好');
+    expect(result).toContain('\x1b[48;5;237m');
+    expect(result).toContain('> 你好');
+    expect(result).toContain('\x1b[0m');
+    const bgIdx = result.indexOf('\x1b[48;5;237m');
+    const resetIdx = result.indexOf('\x1b[0m');
+    expect(bgIdx).toBeLessThan(resetIdx);
+  });
+
+  it('handles empty string', () => {
+    const result = formatEchoedInput('');
+    expect(result).toContain('\x1b[48;5;237m');
+    expect(result).toContain('> ');
+    expect(result).toContain('\x1b[0m');
   });
 });

@@ -51,7 +51,7 @@ export function loadConfig(filePath?: string): Config {
     api_key: validateStringField('api_key'),
     tools: {
       max_loop_rounds:
-        typeof toolsCfg.max_loop_rounds === 'number' ? toolsCfg.max_loop_rounds : 100,
+        typeof toolsCfg.max_loop_rounds === 'number' ? toolsCfg.max_loop_rounds : 0,
       max_consecutive_failures:
         typeof toolsCfg.max_consecutive_failures === 'number' ? toolsCfg.max_consecutive_failures : 5,
       command_timeout:
