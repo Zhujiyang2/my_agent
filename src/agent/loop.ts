@@ -90,30 +90,6 @@ export function createAgent(config: Config, options: AgentOptions = {}): AgentSe
             for (let round = 0; round < maxRounds; round++) {
                 const currentMessages = contextManager.assemble();
 
-                // Diagnostic: validate tool_call/tool_response pairing before sending to API
-                if (round > 0) {
-                    const tcIds = new Set<string>();
-                    const toolResps = new Set<string>();
-                    for (const m of currentMessages) {
-                        const r = m as Record<string, unknown>;
-                        if (r.role === 'assistant' && r.tool_calls) {
-                            for (const tc of (r.tool_calls as Array<{ id: string }>)) tcIds.add(tc.id);
-                        }
-                        if (r.role === 'tool' && r.tool_call_id) {
-                            toolResps.add(r.tool_call_id as string);
-                        }
-                    }
-                    const orphaned: string[] = [];
-                    for (const id of tcIds) {
-                        if (!toolResps.has(id)) orphaned.push(id);
-                    }
-                    if (orphaned.length > 0) {
-                        process.stderr.write(
-                            `\x1b[31m[context] orphaned tool_calls (no matching tool response): ${orphaned.join(', ')}\x1b[0m\n`,
-                        );
-                    }
-                }
-
                 const result = await chatStream(
                     config,
                     currentMessages,

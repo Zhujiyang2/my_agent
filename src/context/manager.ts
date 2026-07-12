@@ -123,14 +123,13 @@ export function createContextManager(config: ContextConfig, model = 'gpt-4o', me
 
         // Phase 3: Budget enforcement
         // The OpenAI API requires every assistant message with tool_calls to have
-        // a matching tool response for each tool_call_id. We must never remove a
-        // tool message that is the last response for an assistant's tool_call_id.
+        // a matching tool response for each tool_call_id. We must never leave an
+        // assistant with tool_calls without its matching tool responses.
         let currentTokens = estimateTokens(assemble(), model);
         while (currentTokens > maxTokens) {
             let removed = false;
 
-            // Strategy 1: Remove an entire (assistant + its tool responses) group.
-            // This is safe because both the tool_calls and their responses are removed together.
+            // Strategy 1: Remove an (assistant + its tool responses) group together.
             for (let k = 0; k < flow.length; k++) {
                 if (flow[k].pinned) continue;
                 const msg = flow[k].message as Record<string, unknown>;
@@ -150,17 +149,29 @@ export function createContextManager(config: ContextConfig, model = 'gpt-4o', me
                     groupEnd = j;
                 }
 
+                // Case A: all tool responses found and nothing pinned → evict entire group
                 if (tcIds.size === 0 && allUnpinned) {
+                    flow.splice(k, groupEnd - k + 1);
+                    removed = true;
+                    break;
+                }
+
+                // Case B: some tool responses are missing (already deleted by prior
+                // compaction). Remove the orphaned assistant to prevent HTTP 400 errors.
+                if (tcIds.size > 0 && !allUnpinned) {
+                    // A pinned entry prevents group removal — skip.
+                } else if (tcIds.size > 0) {
+                    // Tool responses missing — delete the assistant (content loss is
+                    // acceptable vs. API rejection). Also delete any remaining tool
+                    // responses that were found.
                     flow.splice(k, groupEnd - k + 1);
                     removed = true;
                     break;
                 }
             }
 
-            // Strategy 2: If no assistant+tools group found, remove an unpinned tool
-            // message that has no parent assistant with tool_calls (orphaned tool).
+            // Strategy 2: Remove orphaned tool messages (no parent assistant).
             if (!removed) {
-                // Build a set of all tool_call_ids referenced by assistant messages
                 const referencedIds = new Set<string>();
                 for (const entry of flow) {
                     const m = entry.message as Record<string, unknown>;
@@ -175,8 +186,6 @@ export function createContextManager(config: ContextConfig, model = 'gpt-4o', me
                     const tm = flow[k].message as Record<string, unknown>;
                     if (tm.role !== 'tool') continue;
                     const tcId = tm.tool_call_id as string | undefined;
-                    // Safe to remove: not referenced by any assistant, or pinned assistant
-                    // already protects the group case
                     if (!tcId || !referencedIds.has(tcId)) {
                         flow.splice(k, 1);
                         removed = true;
