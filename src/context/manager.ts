@@ -122,16 +122,66 @@ export function createContextManager(config: ContextConfig, model = 'gpt-4o', me
         }
 
         // Phase 3: Budget enforcement
+        // The OpenAI API requires every assistant message with tool_calls to have
+        // a matching tool response for each tool_call_id. We must never remove a
+        // tool message that is the last response for an assistant's tool_call_id.
         let currentTokens = estimateTokens(assemble(), model);
         while (currentTokens > maxTokens) {
-            // Find oldest unpinned tool message
             let removed = false;
+
+            // Strategy 1: Remove an entire (assistant + its tool responses) group.
+            // This is safe because both the tool_calls and their responses are removed together.
             for (let k = 0; k < flow.length; k++) {
                 if (flow[k].pinned) continue;
-                if (flow[k].message.role === 'tool') {
-                    flow.splice(k, 1);
+                const msg = flow[k].message as Record<string, unknown>;
+                if (msg.role !== 'assistant') continue;
+                const tcs = msg.tool_calls as Array<{ id: string }> | undefined;
+                if (!tcs || tcs.length === 0) continue;
+
+                const tcIds = new Set(tcs.map(tc => tc.id));
+                let allUnpinned = true;
+                let groupEnd = k;
+                for (let j = k + 1; j < flow.length && tcIds.size > 0; j++) {
+                    if (flow[j].pinned) { allUnpinned = false; break; }
+                    const tm = flow[j].message as Record<string, unknown>;
+                    if (tm.role === 'tool' && typeof tm.tool_call_id === 'string' && tcIds.has(tm.tool_call_id)) {
+                        tcIds.delete(tm.tool_call_id);
+                    }
+                    groupEnd = j;
+                }
+
+                if (tcIds.size === 0 && allUnpinned) {
+                    flow.splice(k, groupEnd - k + 1);
                     removed = true;
                     break;
+                }
+            }
+
+            // Strategy 2: If no assistant+tools group found, remove an unpinned tool
+            // message that has no parent assistant with tool_calls (orphaned tool).
+            if (!removed) {
+                // Build a set of all tool_call_ids referenced by assistant messages
+                const referencedIds = new Set<string>();
+                for (const entry of flow) {
+                    const m = entry.message as Record<string, unknown>;
+                    if (m.role === 'assistant') {
+                        const tcs = m.tool_calls as Array<{ id: string }> | undefined;
+                        if (tcs) tcs.forEach(tc => referencedIds.add(tc.id));
+                    }
+                }
+
+                for (let k = 0; k < flow.length; k++) {
+                    if (flow[k].pinned) continue;
+                    const tm = flow[k].message as Record<string, unknown>;
+                    if (tm.role !== 'tool') continue;
+                    const tcId = tm.tool_call_id as string | undefined;
+                    // Safe to remove: not referenced by any assistant, or pinned assistant
+                    // already protects the group case
+                    if (!tcId || !referencedIds.has(tcId)) {
+                        flow.splice(k, 1);
+                        removed = true;
+                        break;
+                    }
                 }
             }
 
