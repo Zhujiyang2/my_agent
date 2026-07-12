@@ -95,6 +95,11 @@ export function createStatusLine(opts: StatusLineOptions = {}) {
       output.write(line + '\n');
       lastLineCount = line.split('\n').length;
     } else {
+      // No new content — cursor was moved up by the clear loop above.
+      // Restore original cursor position so callers' relative positioning stays accurate.
+      for (let i = 0; i < lastLineCount; i++) {
+        readline.moveCursor(output, 0, 1);
+      }
       lastLineCount = 0;
     }
   }
