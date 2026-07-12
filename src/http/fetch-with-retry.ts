@@ -76,18 +76,35 @@ function sleep(ms: number): Promise<void> {
 
 /**
  * Check if the error is retryable.
- * Retryable: TypeError (network errors, "fetch failed"), TimeoutError (our internal timeout).
- * Not retryable: AbortError (user interruption), other errors.
+ * Retryable: network errors (TypeError, "fetch failed", "terminated", ECONN* etc.),
+ *            TimeoutError (our internal timeout),
+ *            any Error with a network-related message.
+ * Not retryable: AbortError (user interruption).
  */
 function isRetryableNetworkError(error: unknown): boolean {
+  // Never retry user interruption
   if (error instanceof DOMException && error.name === 'AbortError') {
-    return false; // User interruption — do not retry
+    return false;
   }
+  // Our internal timeout — retry
   if (error instanceof DOMException && error.name === 'TimeoutError') {
-    return true; // Our internal timeout — retry
+    return true;
   }
+  // Undici/Node fetch network errors
   if (error instanceof TypeError) {
-    return true; // Network errors (e.g. "fetch failed")
+    return true;
+  }
+  // Some platforms throw plain Error for network failures (e.g. Windows "terminated")
+  if (error instanceof Error) {
+    const msg = error.message.toLowerCase();
+    const networkPatterns = [
+      'fetch failed', 'terminated', 'econnrefused', 'econnreset',
+      'etimedout', 'enotfound', 'eai_again', 'socket hang up',
+      'network', 'connection', 'timeout', 'abort',
+    ];
+    if (networkPatterns.some(p => msg.includes(p))) {
+      return true;
+    }
   }
   return false;
 }
