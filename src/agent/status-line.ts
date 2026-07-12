@@ -6,13 +6,13 @@ import { getTaskRegistry } from '../tasks/registry';
 export interface StatusLineOptions {
   /** Refresh interval in ms (default: 3000) */
   intervalMs?: number;
-  /** Output stream (default: process.stderr to avoid mixing with stdout) */
+  /** Output stream (default: process.stdout) */
   output?: NodeJS.WriteStream;
 }
 
 export function createStatusLine(opts: StatusLineOptions = {}) {
   const intervalMs = opts.intervalMs ?? 3000;
-  const output = opts.output ?? process.stderr;
+  const output = opts.output ?? process.stdout;
   let expanded = false;
   let timer: ReturnType<typeof setInterval> | null = null;
   let lastLineCount = 0;
