@@ -120,7 +120,22 @@ export function createStatusLine(opts: StatusLineOptions = {}) {
     }
   }
 
-  return { start, stop, refresh, toggle, renderStatusLine, extractProgress };
+  /** Pause the refresh timer without clearing display. Use during LLM output. */
+  function pause(): void {
+    if (timer) {
+      clearInterval(timer);
+      timer = null;
+    }
+  }
+
+  /** Resume refresh timer after pause. */
+  function resume(): void {
+    if (timer) return;
+    refresh();
+    timer = setInterval(refresh, intervalMs);
+  }
+
+  return { start, stop, pause, resume, refresh, toggle, renderStatusLine, extractProgress };
 }
 
 export type StatusLine = ReturnType<typeof createStatusLine>;

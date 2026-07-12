@@ -136,7 +136,7 @@ describe('Long-idle simulation (real HTTP server)', () => {
             retry: { maxRetries: 3, baseDelayMs: 50 },
             timeout: { requestMs: 5000 },
           })
-        ).rejects.toThrow(/retries/i);
+        ).rejects.toThrow(/attempts/i);
       } finally {
         server.close();
       }

@@ -222,6 +222,9 @@ async function main(): Promise<void> {
     // action === 'send_to_agent'
     currentController = new AbortController();
 
+    // Pause status-line during LLM output to avoid stderr/stdout cursor interference
+    statusLine.pause();
+
     try {
       await agent.send(result.input, currentController.signal);
     } catch (err: unknown) {
@@ -229,7 +232,14 @@ async function main(): Promise<void> {
         // interrupted by Ctrl+C — no extra message needed
       } else {
         const msg = err instanceof Error ? err.message : String(err);
-        console.log(formatError(`  Error: ${msg}`));
+        // User-friendly error display
+        if (msg.includes('fetch failed') || msg.includes('Network error') || msg.includes('ECONNREFUSED')) {
+          console.log(formatError('  Connection lost — the API server is unreachable. Check your network and try again.'));
+        } else if (msg.includes('timeout') || msg.includes('timed out')) {
+          console.log(formatError('  Request timed out — the server is taking too long to respond.'));
+        } else {
+          console.log(formatError(`  Error: ${msg}`));
+        }
       }
     } finally {
       currentController = null;
@@ -238,6 +248,9 @@ async function main(): Promise<void> {
     // After LLM output, cursor may be mid-line. Ensure frame starts cleanly.
     process.stdout.write('\n');
     inputLine.renderFrame();
+
+    // Resume status-line refreshes
+    statusLine.resume();
   }
 
   // Unified keypress handler: dispatch by key
@@ -261,6 +274,7 @@ async function main(): Promise<void> {
         console.log(formatInfo('\n  Interrupted'));
       }
       inputLine.reset();
+      statusLine.resume();
       return;
     }
 
@@ -285,6 +299,7 @@ async function main(): Promise<void> {
       console.log(formatInfo('\n  Interrupted'));
     }
     inputLine.reset();
+    statusLine.resume();
   });
 
   rl.on('close', () => {

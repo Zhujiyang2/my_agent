@@ -90,7 +90,8 @@ export function createInputLine(opts: InputLineOpts): InputLine {
       onWrite('\x1b[0J');
     } else {
       // No frame visible (first render, or after LLM output).
-      // Just clear from current cursor position down.
+      // Go to column 0, then clear from cursor position down.
+      onWrite('\r');
       onWrite('\x1b[0J');
     }
 

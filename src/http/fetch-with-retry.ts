@@ -10,7 +10,7 @@
 //   - Not retryable: AbortError (user Ctrl+C), 400, 401, 403, 404, 422
 //   - Max 5 retries with exponential backoff + jitter (±25%)
 
-const DEFAULT_MAX_RETRIES = 5;
+const DEFAULT_MAX_RETRIES = 10;
 const DEFAULT_BASE_DELAY_MS = 1000;
 const DEFAULT_MAX_DELAY_MS = 16000;
 const DEFAULT_RETRYABLE_STATUSES = [429, 502, 503, 504];
@@ -266,12 +266,12 @@ export async function fetchWithRetry(
         continue;
       }
 
-      // Retries exhausted for network error — give context
+      // Retries exhausted for network error — give a user-friendly message
       if (attempt >= maxRetries && isRetryableNetworkError(error)) {
-        const msg =
+        const originalMsg =
           error instanceof Error ? error.message : String(error);
         throw new Error(
-          `Request failed after ${maxRetries} retries. Last error: ${msg}`,
+          `Network error after ${maxRetries + 1} attempts: ${originalMsg}. Please check your network connection.`,
         );
       }
 

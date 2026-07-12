@@ -154,9 +154,14 @@ describe('TaskRegistry', () => {
     // File should be deleted
     expect(fs.existsSync(task.outputPath)).toBe(false);
 
-    // Task should not appear in list
+    // Task should still be in the map (get/waitFor/list still work)
     const all = registry.list();
-    expect(all.find(t => t.id === task.id)).toBeUndefined();
+    const found = all.find(t => t.id === task.id);
+    expect(found).toBeDefined();
+    expect(found!.status).toBe('completed');
+    // File is gone but result is in-memory
+    expect(found!.result).toBeDefined();
+    expect(found!.result!.exitCode).toBe(0);
   });
 
   it('failed tasks are preserved after completion', async () => {
@@ -206,9 +211,13 @@ describe('TaskRegistry', () => {
     await registry.waitFor(task.id);
     // Wait for auto-clean setTimeout(0) to fire
     await new Promise(resolve => setTimeout(resolve, 50));
-    // After auto-clean, successful tasks are removed
+    // After auto-clean, successful tasks remain in the map (file deleted)
     const t = registry.get(task.id);
-    expect(t).toBeUndefined();
+    expect(t).toBeDefined();
+    expect(t!.status).toBe('completed');
+    expect(t!.result).toBeDefined();
+    // File is cleaned up
+    expect(fs.existsSync(task.outputPath)).toBe(false);
   });
 
   it('recover marks task with null exitCode as lost', async () => {

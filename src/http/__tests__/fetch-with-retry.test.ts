@@ -284,8 +284,8 @@ describe('fetchWithRetry', () => {
     // Math.random returns 1.0, so backoff: 1000, 2000 — advance past both
     await vi.runAllTimersAsync();
 
-    await expect(promise).rejects.toThrow(/retries/i);
-    await expect(promise).rejects.toThrow(/2/);
+    await expect(promise).rejects.toThrow(/attempts/i);
+    await expect(promise).rejects.toThrow(/3/);
     expect(fetchMock).toHaveBeenCalledTimes(3); // 1 initial + 2 retries
   });
 

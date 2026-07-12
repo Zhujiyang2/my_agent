@@ -162,12 +162,13 @@ export function createTaskRegistry(stateDir: string) {
         try { cb(t); } catch { /* ignore */ }
       }
 
-      // Auto-clean successful tasks after callbacks have had a chance to read output
+      // Auto-clean successful tasks after callbacks have had a chance to read output.
+      // Delete the output file to free disk space, but keep the task in the map so
+      // get() / waitFor() / list() still work. save() filters out completed tasks;
+      // cleanup() handles eventual removal from the map.
       if (t.status === 'completed') {
         setTimeout(() => {
           try { fs.unlinkSync(t.outputPath); } catch { /* file already gone */ }
-          tasks.delete(id);
-          timeoutTimers.delete(id);
           save().catch(() => {});
         }, 0);
       }
