@@ -4,7 +4,6 @@ import type { FooterMessage } from '../footer';
 
 // Minimal footer stub matching the real interface
 function createStubFooter(messages: FooterMessage[] = []) {
-  let taskLines: string[] = [];
   let statusLine = '';
   return {
     messages,
@@ -15,8 +14,6 @@ function createStubFooter(messages: FooterMessage[] = []) {
     },
     remove(_id: string) {},
     clear() { messages.length = 0; },
-    setTasks(lines: string[]) { taskLines = lines; },
-    clearTasks() { taskLines = []; },
     setStatusLine(line: string) { statusLine = line; },
     renderSeparator() {
       return '─'.repeat(80);
@@ -26,18 +23,15 @@ function createStubFooter(messages: FooterMessage[] = []) {
     },
     render() {
       const sep = '─'.repeat(80);
-      const lines = [sep, '  /exit to quit | Ctrl+C to interrupt | Ctrl+O tasks'];
+      const lines = [sep, '  /exit to quit | Ctrl+C to interrupt'];
       for (const msg of messages) {
         lines.push(`${msg.icon} ${msg.text}`);
-      }
-      for (const tl of taskLines) {
-        lines.push(tl);
       }
       return lines.join('\n');
     },
     frameLineCount() {
-      const slc = statusLine ? 1 : 0;
-      return slc + 3 + messages.length + taskLines.length;
+      const slc = statusLine ? statusLine.split('\n').length : 0;
+      return slc + 3 + messages.length;
     },
   };
 }
@@ -218,7 +212,6 @@ describe('createInputLine', () => {
   describe('renderFrame', () => {
     it('renders frame with top sep, prompt+line, bottom sep+hints', () => {
       const il = createInputLine({ footer, onWrite });
-      // Type "hi" character by character
       il.onKeypress('h', { name: 'h', ctrl: false, meta: false, shift: false });
       il.onKeypress('i', { name: 'i', ctrl: false, meta: false, shift: false });
       onWrite.mockClear();
@@ -231,65 +224,58 @@ describe('createInputLine', () => {
       expect(output).toContain('/exit to quit');
     });
 
-    it('expands with task lines below hint when setTasks is called', () => {
-      const il = createInputLine({ footer, onWrite });
-      il.onKeypress('h', { name: 'h', ctrl: false, meta: false, shift: false });
-      onWrite.mockClear();
-
-      // Simulate Ctrl+O: add task lines, then re-render
-      footer.setTasks([
-        '\x1b[2m┃ ⚡ a1b2c3d4e5f6 30s echo hello\x1b[0m',
-        '\x1b[2m┃ Ctrl+O to collapse\x1b[0m',
-      ]);
-      il.renderFrame();
-
-      const output = onWrite.mock.calls.map((c: string[]) => c[0]).join('');
-      // Task lines should appear after hint
-      const hintIdx = output.indexOf('/exit to quit');
-      const taskIdx = output.indexOf('echo hello');
-      const collapseIdx = output.indexOf('Ctrl+O to collapse');
-      expect(hintIdx).toBeLessThan(taskIdx);
-      expect(taskIdx).toBeLessThan(collapseIdx);
-      // Should render correctly (clear + full frame)
-      expect(output).toContain('\x1b[0J');
-    });
-
-    it('clears task lines when clearTasks is called', () => {
-      const il = createInputLine({ footer, onWrite });
-      il.onKeypress('h', { name: 'h', ctrl: false, meta: false, shift: false });
-      // First expand
-      footer.setTasks(['\x1b[2m┃ ⚡ echo hello\x1b[0m']);
-      il.renderFrame();
-      onWrite.mockClear();
-
-      // Then collapse
-      footer.clearTasks();
-      il.renderFrame();
-
-      const output = onWrite.mock.calls.map((c: string[]) => c[0]).join('');
-      expect(output).not.toContain('echo hello');
-      expect(output).toContain('\x1b[1A'); // clear from top sep position
-    });
-
-    it('handles toggling with status line present', () => {
+    it('renders status line above top separator', () => {
       const il = createInputLine({ footer, onWrite });
       il.onKeypress('a', { name: 'a', ctrl: false, meta: false, shift: false });
-      // Simulate status timer adding status line
       footer.setStatusLine('\x1b[2m┃ ⚡ 1 running\x1b[0m');
-      il.renderFrame(); // frame now has status line
+      il.renderFrame();
       onWrite.mockClear();
 
-      // Now toggle tasks on (Ctrl+O)
-      footer.setTasks(['\x1b[2m┃ ⚡ a1b2c3d4e5f6 30s npm test\x1b[0m', '\x1b[2m┃ Ctrl+O to collapse\x1b[0m']);
+      // Re-render to verify the old frame is properly cleared (moves up past status line)
       il.renderFrame();
 
       const output = onWrite.mock.calls.map((c: string[]) => c[0]).join('');
-      // Status line should appear above top sep
+      // Clear should move up past status line + top sep = 2 lines
+      expect(output).toContain('\x1b[2A');
       expect(output).toContain('⚡ 1 running');
-      // Task line should appear in output
+    });
+
+    it('handles multi-line status line correctly', () => {
+      const il = createInputLine({ footer, onWrite });
+      il.onKeypress('a', { name: 'a', ctrl: false, meta: false, shift: false });
+      // Multi-line status: "N running" + one task name per line
+      footer.setStatusLine('\x1b[2m┃ ⚡ 2 running\x1b[0m\n\x1b[2m  npm build\x1b[0m\n\x1b[2m  npm test\x1b[0m');
+      il.renderFrame();
+      onWrite.mockClear();
+
+      // Re-render: should clear old multi-line status properly
+      il.renderFrame();
+
+      const output = onWrite.mock.calls.map((c: string[]) => c[0]).join('');
+      // 3 status lines + 1 top sep = 4 lines to move up
+      expect(output).toContain('\x1b[4A');
+      expect(output).toContain('2 running');
+      expect(output).toContain('npm build');
       expect(output).toContain('npm test');
-      // Clear should happen from correct position (status line)
-      expect(output).toContain('\x1b[2A'); // moves up 2 lines (status + top sep)
+    });
+
+    it('clears status line when emptied between renders', () => {
+      const il = createInputLine({ footer, onWrite });
+      il.onKeypress('a', { name: 'a', ctrl: false, meta: false, shift: false });
+      // First render with multi-line status
+      footer.setStatusLine('line1\nline2');
+      il.renderFrame();
+      onWrite.mockClear();
+
+      // Remove status and re-render
+      footer.setStatusLine('');
+      il.renderFrame();
+
+      const output = onWrite.mock.calls.map((c: string[]) => c[0]).join('');
+      // Should clear old frame (3 lines up: 2 status + 1 top sep)
+      expect(output).toContain('\x1b[3A');
+      // New frame should NOT contain status content
+      expect(output).not.toContain('line1');
     });
   });
 });

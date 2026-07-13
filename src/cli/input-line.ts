@@ -88,7 +88,7 @@ export function createInputLine(opts: InputLineOpts): InputLine {
       const topSep = footer.renderSeparator();
       const bottom = footer.render();
       const bottomLines = bottom.split('\n').length;
-      const slCount = statusLine ? 1 : 0;
+      const slCount = statusLine ? statusLine.split('\n').length : 0;
 
       if (isFrameVisible) {
         // Old frame is visible. Move to col 0, clear current line, then move
