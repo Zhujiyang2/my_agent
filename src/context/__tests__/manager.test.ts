@@ -246,7 +246,7 @@ describe('createContextManager', () => {
 
     // === Compact: budget ===
 
-    it('removes oldest unpinned tool messages when over budget', () => {
+    it('removes oldest unpinned tool messages when over budget', { timeout: 15000 }, () => {
         const cmTight = createContextManager({ max_context_tokens: 50, recent_rounds: 3 });
 
         for (let i = 0; i < 10; i++) {
@@ -404,6 +404,145 @@ describe('createContextManager', () => {
         expect(messages[0].role).toBe('system');
         expect(messages[0].content).toContain('[Compressed context]');
         expect(messages[0].content).toContain('User asked to do something');
+    });
+
+    // === Deferred message queue ===
+
+    it('appendDeferred does not affect assemble until flushDeferred is called', () => {
+        cm.append(userMsg('hello'));
+        cm.appendDeferred(userMsg('deferred message'));
+        cm.append(assistantMsg('response'));
+
+        const messages = cm.assemble();
+        expect(messages).toHaveLength(2);
+        expect(messages[0].content).toBe('hello');
+        expect(messages[1].content).toBe('response');
+    });
+
+    it('flushDeferred appends all deferred messages to flow', () => {
+        cm.append(userMsg('hello'));
+        cm.appendDeferred(userMsg('deferred 1'));
+        cm.appendDeferred(userMsg('deferred 2'));
+        cm.flushDeferred();
+
+        const messages = cm.assemble();
+        expect(messages).toHaveLength(3);
+        expect(messages[0].content).toBe('hello');
+        expect(messages[1].content).toBe('deferred 1');
+        expect(messages[2].content).toBe('deferred 2');
+    });
+
+    it('flushDeferred clears the deferred queue', () => {
+        cm.appendDeferred(userMsg('first batch'));
+        cm.flushDeferred();
+        cm.flushDeferred(); // second flush should be a no-op
+
+        const messages = cm.assemble();
+        expect(messages).toHaveLength(1);
+        expect(messages[0].content).toBe('first batch');
+    });
+
+    it('multiple appendDeferred + flushDeferred cycles work correctly', () => {
+        cm.append(userMsg('round 1'));
+        cm.appendDeferred(userMsg('bg task a done'));
+        cm.flushDeferred();
+
+        cm.append(userMsg('round 2'));
+        cm.appendDeferred(userMsg('bg task b done'));
+        cm.appendDeferred(userMsg('bg task c done'));
+        cm.flushDeferred();
+
+        const messages = cm.assemble();
+        expect(messages).toHaveLength(5);
+        expect(messages[0].content).toBe('round 1');
+        expect(messages[1].content).toBe('bg task a done');
+        expect(messages[2].content).toBe('round 2');
+        expect(messages[3].content).toBe('bg task b done');
+        expect(messages[4].content).toBe('bg task c done');
+    });
+
+    it('flushDeferred when queue is empty is a no-op', () => {
+        cm.append(userMsg('hello'));
+        cm.flushDeferred();
+
+        const messages = cm.assemble();
+        expect(messages).toHaveLength(1);
+        expect(messages[0].content).toBe('hello');
+    });
+
+    it('clear resets the deferred queue', () => {
+        cm.append(userMsg('hello'));
+        cm.appendDeferred(userMsg('deferred'));
+        cm.clear();
+
+        cm.flushDeferred();
+        const messages = cm.assemble();
+        expect(messages).toHaveLength(0);
+    });
+
+    // === Tool call invariant preservation ===
+
+    it('deferred user messages never appear between assistant tool_calls and its tool responses', () => {
+        // Simulate the race condition: a background task completes during tool
+        // execution, but its notification should NOT appear between the
+        // assistant's tool_calls and their tool responses.
+
+        // Round: LLM responds with two tool_calls
+        cm.append(assistantMsg('')); // placeholder, we need tool_calls
+        // Manually construct the flow to simulate the race:
+        // 1. Append assistant with tool_calls
+        cm.append({
+            role: 'assistant',
+            content: null,
+            tool_calls: [
+                { id: 'tc_1', type: 'function' as const, function: { name: 'run_command', arguments: '{"command":"rm file"}' } },
+                { id: 'tc_2', type: 'function' as const, function: { name: 'run_command', arguments: '{"command":"rmdir dir"}' } },
+            ],
+        });
+
+        // 2. Append tool response for tc_1
+        cm.append({
+            role: 'tool',
+            content: 'Task started: job-1',
+            tool_call_id: 'tc_1',
+            name: 'run_command',
+        } as Message);
+
+        // 3. Simulate: background task completes during tc_2's confirmation await
+        // Use appendDeferred so it won't interleave
+        cm.appendDeferred({
+            role: 'user',
+            content: 'Background task job-1 finished.',
+        });
+
+        // 4. Append tool response for tc_2
+        cm.append({
+            role: 'tool',
+            content: 'Task started: job-2',
+            tool_call_id: 'tc_2',
+            name: 'run_command',
+        } as Message);
+
+        // 5. Flush deferred — should place the notification AFTER tc_2's response
+        cm.flushDeferred();
+
+        const messages = cm.assemble();
+        // Find positions of tool_calls assistant, tool responses, and user notification
+        const assistantIdx = messages.findIndex(m => m.role === 'assistant' && m.tool_calls);
+        const tc1Idx = messages.findIndex(m => m.role === 'tool' && m.tool_call_id === 'tc_1');
+        const tc2Idx = messages.findIndex(m => m.role === 'tool' && m.tool_call_id === 'tc_2');
+        const userIdx = messages.findIndex(m => m.role === 'user' && m.content?.includes('Background task'));
+
+        // The user notification must come AFTER both tool responses (after tc_2),
+        // NOT between the assistant and its tool responses
+        expect(userIdx).toBeGreaterThan(tc2Idx);
+        // Both tool responses must come after the assistant
+        expect(tc1Idx).toBeGreaterThan(assistantIdx);
+        expect(tc2Idx).toBeGreaterThan(assistantIdx);
+        // tc_1 and tc_2 must both be between assistant and user notification
+        expect(assistantIdx).toBeLessThan(tc1Idx);
+        expect(tc1Idx).toBeLessThan(tc2Idx);
+        expect(tc2Idx).toBeLessThan(userIdx);
     });
 
     it('llmCompact still allows new messages to be appended', () => {

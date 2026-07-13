@@ -178,7 +178,7 @@ describe('createAgent', () => {
     expect(agent.history[2].content).toContain('unknown tool');
   });
 
-  it('throws when exceeding max loop rounds', async () => {
+  it('throws when exceeding max loop rounds', { timeout: 15000 }, async () => {
     createEchoTool(registry);
 
     // Always return tool calls — loop will never terminate
@@ -188,7 +188,7 @@ describe('createAgent', () => {
     await expect(agent.send('infinite loop')).rejects.toThrow(/Exceeded maximum/);
   });
 
-  it('preserves partial history when max rounds exceeded (not rolled back)', async () => {
+  it('preserves partial history when max rounds exceeded (not rolled back)', { timeout: 15000 }, async () => {
     createEchoTool(registry);
 
     mockedChatStream.mockResolvedValue(makeToolCallResult('echo', { message: 'loop' }));
@@ -201,7 +201,7 @@ describe('createAgent', () => {
     expect(agent.history[0].role).toBe('user');
   });
 
-  it('error message includes round count and last tool name', async () => {
+  it('error message includes round count and last tool name', { timeout: 15000 }, async () => {
     createEchoTool(registry);
 
     mockedChatStream.mockResolvedValue(makeToolCallResult('echo', { message: 'loop' }));

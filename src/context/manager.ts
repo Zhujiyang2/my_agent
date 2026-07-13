@@ -20,6 +20,7 @@ export class BudgetError extends Error {
 export function createContextManager(config: ContextConfig, model = 'gpt-4o', memoryManager?: MemoryManager): ContextManager {
     const flow: FlowEntry[] = [];
     const state: Record<string, unknown> = {};
+    const deferredMessages: Message[] = [];
     let currentRound = 0;
     let cancelled = false;
 
@@ -32,6 +33,17 @@ export function createContextManager(config: ContextConfig, model = 'gpt-4o', me
             currentRound++;
         }
         flow.push({ message: { ...message }, round: currentRound, pinned: false });
+    }
+
+    function appendDeferred(message: Message): void {
+        deferredMessages.push({ ...message });
+    }
+
+    function flushDeferred(): void {
+        while (deferredMessages.length > 0) {
+            const msg = deferredMessages.shift()!;
+            append(msg);
+        }
     }
 
     function assemble(): Message[] {
@@ -242,6 +254,7 @@ export function createContextManager(config: ContextConfig, model = 'gpt-4o', me
 
     function clear(): void {
         flow.length = 0;
+        deferredMessages.length = 0;
         for (const key of Object.keys(state)) {
             delete state[key];
         }
@@ -273,6 +286,8 @@ export function createContextManager(config: ContextConfig, model = 'gpt-4o', me
 
     return {
         append,
+        appendDeferred,
+        flushDeferred,
         assemble,
         compact,
         llmCompact,

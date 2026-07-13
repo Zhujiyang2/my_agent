@@ -88,6 +88,12 @@ export function createAgent(config: Config, options: AgentOptions = {}): AgentSe
 
         try {
             for (let round = 0; round < maxRounds; round++) {
+                // Flush any deferred messages (e.g., background task completion
+                // notifications) before assembling the next API request. This
+                // ensures they never appear between an assistant's tool_calls
+                // and its tool responses.
+                contextManager.flushDeferred();
+
                 const currentMessages = contextManager.assemble();
 
                 const result = await chatStream(
@@ -223,7 +229,7 @@ export function createAgent(config: Config, options: AgentOptions = {}): AgentSe
                                         parts.push(`\n--- output ---\n${output.slice(-2000)}`);
                                     }
 
-                                    contextManager.append({
+                                    contextManager.appendDeferred({
                                         role: 'user',
                                         content: parts.join('\n'),
                                     });

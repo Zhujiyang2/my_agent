@@ -7,6 +7,26 @@ export interface ContextManager {
     /** Add a message to the flow layer. */
     append(message: Message): void;
 
+    /**
+     * Queue a message for deferred insertion. Messages added via this method
+     * are held in a separate queue and only appended to the flow when
+     * {@link flushDeferred} is called.
+     *
+     * Use this for background task completion notifications that may fire
+     * while we are in the middle of processing tool calls — it prevents
+     * user/assistant messages from being injected between an assistant
+     * message's tool_calls and their corresponding tool responses, which
+     * would violate the OpenAI/DeepSeek API requirement.
+     */
+    appendDeferred(message: Message): void;
+
+    /**
+     * Flush all deferred messages into the main flow. After this call, the
+     * deferred queue is empty and all previously deferred messages are part
+     * of the flow visible to {@link assemble}.
+     */
+    flushDeferred(): void;
+
     /** Pure read: assemble the final messages for the next LLM call. No side effects. */
     assemble(): Message[];
 
