@@ -38,7 +38,7 @@ import { createStatusLine } from '../src/agent/status-line.js';
 import { createFooter } from '../src/cli/footer.js';
 import { createInputLine } from '../src/cli/input-line.js';
 import { resolveProjectPath } from '../src/paths.js';
-import { formatTaskLines } from '../src/cli/task-formatter.js';
+
 
 const nodeVersion = process.versions.node.split('.').map(Number);
 if (nodeVersion[0] < 18) {
@@ -178,10 +178,8 @@ async function main(): Promise<void> {
     },
   });
 
-  // Status line: used for extractProgress() helper and collapsed-mode rendering.
-  // Auto-refresh is handled via footer + renderFrame to avoid independent
-  // terminal writes clobbering the frame layout.
-  const statusLine = createStatusLine({ intervalMs: 3000 });
+  // Status line: renders running task count + names for the frame header.
+  const statusLine = createStatusLine();
 
   // Manage status via footer so it stays in sync with the frame.
   // Timer-based refresh updates the footer and re-renders the frame.
@@ -297,25 +295,8 @@ async function main(): Promise<void> {
   }
 
   // Unified keypress handler: dispatch by key
-  let tasksExpanded = false;
-
   process.stdin.on('keypress', (_ch, key) => {
     if (!key) return;
-
-    // Ctrl+O: toggle task display in footer (below the hint line).
-    // Previously used statusLine.toggle() which rendered between agent output
-    // and the frame, causing cursor-positioning conflicts and overwriting agent
-    // output. Now rendered as part of the footer so renderFrame handles it naturally.
-    if (key.ctrl && !key.meta && key.name === 'o') {
-      tasksExpanded = !tasksExpanded;
-      if (tasksExpanded) {
-        footer.setTasks(formatTaskLines(taskRegistry.list(), statusLine.extractProgress));
-      } else {
-        footer.clearTasks();
-      }
-      inputLine.renderFrame();
-      return;
-    }
 
     // Ctrl+C: abort current LLM call.
     // When an LLM call is active, just abort — handleSubmit's cleanup path
