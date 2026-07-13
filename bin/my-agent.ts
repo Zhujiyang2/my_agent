@@ -39,6 +39,7 @@ import { createFooter } from '../src/cli/footer.js';
 import { createInputLine } from '../src/cli/input-line.js';
 import { resolveProjectPath } from '../src/paths.js';
 
+
 const nodeVersion = process.versions.node.split('.').map(Number);
 if (nodeVersion[0] < 18) {
   console.error(formatError(`  Error: Node.js >= 18 required (current: ${process.version})`));
@@ -63,10 +64,13 @@ async function main(): Promise<void> {
   // Inject default system prompt if not configured
   if (!config.context.systemPrompt) {
     config.context.systemPrompt =
-      '你是昇腾资深FAE，擅长算子开发、模型训练推理适配、部署、评测、问题定位和调优。' +
+      '【角色】你是昇腾资深FAE，擅长算子开发、模型训练推理适配、部署、评测、问题定位和调优。' +
       '对话自然友好，非昇腾问题正常交流，不强行套昇腾。' +
-      '收到用户消息时，优先检查 Skill 工具列表是否有匹配的技能——Skill 是你的专业能力，不要跳过。' +
-      '你也有 MCP 工具可用，是否调用由你根据任务需要自行判断，不要为了调用而调用。';
+      '【你的能力】' +
+      'Skill：收到用户消息时，优先检查 Skill 工具列表是否有匹配的技能——Skill 是你的专业能力，不要跳过。' +
+      'MCP：你也有 MCP 工具可用，是否调用由你根据任务需要自行判断，不要为了调用而调用。' +
+      'Subagent：你拥有子代理能力（spawn_agent 等工具）。适合场景：多文件并行探索、可拆解为独立子任务的大任务、需隔离上下文的操作。不适合场景：强顺序依赖的任务、单步简单查询、需你全程把控方向的复杂决策。' +
+      'Memory：你拥有记忆能力（remember/forget 工具），可在 .my_agent/memory/ 持久保存信息。记忆分两种：user 型记用户偏好和原则（如编码规范、项目约定），agent 型记你从对话中学到的经验。适合场景：用户明确表达的偏好、跨会话需保留的重要决策或背景。不适合场景：代码库已有的信息、仅本次有效的内容、大段代码或日志。';
   }
 
   const agent = createAgent(config, {
@@ -177,9 +181,40 @@ async function main(): Promise<void> {
     },
   });
 
-  // Start task status-line (stderr to avoid mixing with LLM output on stdout)
-  const statusLine = createStatusLine({ intervalMs: 3000 });
-  statusLine.start();
+  // Status line: renders running task count + names for the frame header.
+  const statusLine = createStatusLine();
+
+  // Manage status via footer so it stays in sync with the frame.
+  // Timer-based refresh updates the footer and re-renders the frame.
+  let statusTimer: ReturnType<typeof setInterval> | null = null;
+
+  function updateStatusFooter() {
+    const tasks = taskRegistry.list();
+    const active = tasks.filter(t => t.status === 'running');
+    if (active.length > 0) {
+      footer.setStatusLine(statusLine.renderStatusLine(tasks));
+    } else {
+      footer.setStatusLine('');
+    }
+  }
+
+  function startStatusTimer() {
+    if (statusTimer) return;
+    updateStatusFooter();
+    statusTimer = setInterval(() => {
+      updateStatusFooter();
+      inputLine.renderFrame();
+    }, 3000);
+  }
+
+  function stopStatusTimer() {
+    if (statusTimer) {
+      clearInterval(statusTimer);
+      statusTimer = null;
+    }
+  }
+
+  startStatusTimer();
 
   // Main submit handler — called when user presses Enter
   async function handleSubmit(): Promise<void> {
@@ -230,8 +265,9 @@ async function main(): Promise<void> {
     // action === 'send_to_agent'
     currentController = new AbortController();
 
-    // Pause status-line during LLM output to avoid stderr/stdout cursor interference
-    statusLine.pause();
+    // Pause status timer during LLM output to avoid frame re-renders
+    // interfering with streaming output.
+    stopStatusTimer();
 
     try {
       await agent.send(result.input, currentController.signal);
@@ -254,28 +290,16 @@ async function main(): Promise<void> {
     }
 
     // After LLM output, cursor may be mid-line. Ensure frame starts cleanly.
-    // Resume status-line first (writes to stderr), then move cursor up past
-    // the status output so renderFrame's \x1b[0J clears it along with
-    // anything below before redrawing the frame.
+    // Clear old footer messages, update status, and redraw the frame.
     process.stdout.write('\n');
-    statusLine.resume();
-    const slCount = statusLine.getLastLineCount();
-    if (slCount > 0) {
-      process.stdout.write(`\x1b[${slCount}A`);
-    }
+    footer.clear();
     inputLine.renderFrame();
+    startStatusTimer();
   }
 
   // Unified keypress handler: dispatch by key
   process.stdin.on('keypress', (_ch, key) => {
     if (!key) return;
-
-    // Ctrl+O: toggle task status-line expand/collapse.
-    if (key.ctrl && !key.meta && key.name === 'o') {
-      statusLine.toggle();
-      inputLine.renderFrame();
-      return;
-    }
 
     // Ctrl+C: abort current LLM call.
     // When an LLM call is active, just abort — handleSubmit's cleanup path
@@ -296,8 +320,9 @@ async function main(): Promise<void> {
     // Prevents confirmation keystrokes from being replayed as agent input.
     if (confirming) return;
 
-    // Enter: submit input
+    // Enter: submit input (ignore empty lines)
     if (key.name === 'return' || key.name === 'enter') {
+      if (inputLine.getLine().trim().length === 0) return;
       handleSubmit();
       return;
     }
@@ -321,7 +346,7 @@ async function main(): Promise<void> {
   });
 
   rl.on('close', () => {
-    statusLine.stop();
+    stopStatusTimer();
     taskRegistry.destroy();
     subagentManager.destroy();
     mcpManager.destroy().catch(() => {});

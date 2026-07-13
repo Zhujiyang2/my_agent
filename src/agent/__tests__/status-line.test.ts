@@ -35,7 +35,7 @@ describe('createStatusLine', () => {
   let sl: ReturnType<typeof createStatusLine>;
 
   beforeEach(() => {
-    sl = createStatusLine({ intervalMs: 99999 }); // long interval to avoid auto-fire
+    sl = createStatusLine();
   });
 
   describe('renderStatusLine', () => {
@@ -43,43 +43,78 @@ describe('createStatusLine', () => {
       expect(sl.renderStatusLine([])).toBe('');
     });
 
-    it('shows running task count in collapsed mode', () => {
-      const tasks = [makeTask()];
+    it('shows running count and task name', () => {
+      const tasks = [
+        makeTask({ id: 'job-run-1', status: 'running', command: 'npm build' }),
+      ];
       const result = sl.renderStatusLine(tasks);
       expect(result).toContain('1 running');
+      expect(result).toContain('npm build');
     });
 
-    it('does not show completed task in collapsed mode', () => {
+    it('shows multiple running tasks each on their own line', () => {
+      const tasks = [
+        makeTask({ id: 'job-run-1', status: 'running', command: 'npm build' }),
+        makeTask({ id: 'job-run-2', status: 'running', command: 'npm test' }),
+      ];
+      const result = sl.renderStatusLine(tasks);
+      const lines = result.split('\n');
+      expect(lines[0]).toContain('2 running');
+      expect(lines[1]).toContain('npm build');
+      expect(lines[2]).toContain('npm test');
+    });
+
+    it('filters out non-running tasks', () => {
+      const tasks = [
+        makeTask({ id: 'job-run-1', status: 'running', command: 'npm build' }),
+        makeTask({ id: 'job-done-1', status: 'completed', exitCode: 0, finishedAt: Date.now(), command: 'npm lint' }),
+      ];
+      const result = sl.renderStatusLine(tasks);
+      expect(result).toContain('1 running');
+      expect(result).toContain('npm build');
+      expect(result).not.toContain('npm lint');
+    });
+
+    it('does not show completed task when no running tasks', () => {
       const tasks = [makeTask({
         id: 'job-abc123',
         status: 'completed',
         exitCode: 0,
         finishedAt: Date.now(),
+        command: 'npm build',
       })];
       const result = sl.renderStatusLine(tasks);
-      // Collapsed mode: no completed tasks shown
       expect(result).toBe('');
     });
 
-    it('does not show failed task in collapsed mode', () => {
+    it('does not show failed task when no running tasks', () => {
       const tasks = [makeTask({
         id: 'job-fail01',
         status: 'failed',
         exitCode: 1,
         finishedAt: Date.now(),
+        command: 'npm test',
       })];
       const result = sl.renderStatusLine(tasks);
-      // Collapsed mode: no failed tasks shown
       expect(result).toBe('');
     });
 
-    it('shows only running tasks in collapsed mode', () => {
+    it('truncates long command names to 60 chars', () => {
+      const longCmd = 'a'.repeat(100);
+      const tasks = [makeTask({ id: 'job-run-1', status: 'running', command: longCmd })];
+      const result = sl.renderStatusLine(tasks);
+      expect(result).toContain('a'.repeat(57) + '...');
+      expect(result).not.toContain('a'.repeat(100));
+    });
+
+    it('shows only running tasks when mix of statuses', () => {
       const tasks = [
-        makeTask({ id: 'job-run-1', status: 'running' }),
-        makeTask({ id: 'job-done-1', status: 'completed', exitCode: 0, finishedAt: Date.now() }),
+        makeTask({ id: 'job-run-1', status: 'running', command: 'npm build' }),
+        makeTask({ id: 'job-done-1', status: 'completed', exitCode: 0, finishedAt: Date.now(), command: 'npm lint' }),
       ];
       const result = sl.renderStatusLine(tasks);
       expect(result).toContain('1 running');
+      expect(result).toContain('npm build');
       expect(result).not.toContain('completed');
       expect(result).not.toContain('failed');
     });
@@ -117,19 +152,6 @@ describe('createStatusLine', () => {
         makeTask({ tailBuffer: '150% done (overflow)' })
       );
       expect(progress).toBeNull(); // >100 should not be treated as progress
-    });
-  });
-
-  describe('toggle', () => {
-    it('toggles expanded mode', () => {
-      const tasks = [makeTask()];
-      const collapsed = sl.renderStatusLine(tasks);
-      sl.toggle();
-      const expanded = sl.renderStatusLine(tasks);
-      // Expanded has more lines (footer "Ctrl+O to collapse")
-      const collapsedLines = collapsed.split('\n').length;
-      const expandedLines = expanded.split('\n').length;
-      expect(expandedLines).toBeGreaterThan(collapsedLines);
     });
   });
 });
