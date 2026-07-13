@@ -75,8 +75,8 @@ export function loadConfig(filePath?: string): Config {
     },
     memory: {
       enabled: typeof memoryCfg.enabled === 'boolean' ? memoryCfg.enabled : true,
-      user_budget: typeof memoryCfg.user_budget === 'number' ? memoryCfg.user_budget : 4000,
-      agent_budget: typeof memoryCfg.agent_budget === 'number' ? memoryCfg.agent_budget : 2000,
+      user_budget: typeof memoryCfg.user_budget === 'number' ? memoryCfg.user_budget : 3000,
+      agent_budget: typeof memoryCfg.agent_budget === 'number' ? memoryCfg.agent_budget : 3000,
       compress_threshold: typeof memoryCfg.compress_threshold === 'number' ? memoryCfg.compress_threshold : 5,
     },
     sandbox: {
