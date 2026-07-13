@@ -32,7 +32,8 @@ describe('createFooter', () => {
       mockColumns(80);
       const result = footer.render();
       expect(result).toContain('─'.repeat(80));
-      expect(result).toContain('/exit to quit | Ctrl+C to interrupt | Ctrl+O tasks');
+      expect(result).toContain('/exit to quit | Ctrl+C to interrupt');
+      expect(result).not.toContain('Ctrl+O');
     });
 
     it('renders messages below separator and hint', () => {
@@ -116,7 +117,7 @@ describe('createFooter', () => {
 
       const result = footer.render();
       expect(result).not.toContain('cmd1');
-      expect(result).toContain('/exit to quit | Ctrl+C to interrupt | Ctrl+O tasks');
+      expect(result).toContain('/exit to quit | Ctrl+C to interrupt');
       expect(result).toContain('─'.repeat(80));
     });
   });
@@ -137,6 +138,29 @@ describe('createFooter', () => {
       footer.upsert({ id: 'job-2', icon: '✗', text: 'cmd2: failed' });
       // topSep(1) + bottomSep(1) + hint(1) + msgs(2) = 5
       expect(footer.frameLineCount()).toBe(5);
+    });
+
+    it('includes status line in count', () => {
+      footer.setStatusLine('\x1b[2m┃ ⚡ 1 running\x1b[0m');
+      // statusLine(1) + topSep(1) + bottomSep(1) + hint(1) = 4
+      expect(footer.frameLineCount()).toBe(4);
+    });
+
+    it('counts multi-line status correctly', () => {
+      footer.setStatusLine('line1\nline2\nline3');
+      // statusLine(3) + topSep(1) + bottomSep(1) + hint(1) = 6
+      expect(footer.frameLineCount()).toBe(6);
+    });
+  });
+
+  describe('renderStatusLine / setStatusLine', () => {
+    it('returns empty string when no status', () => {
+      expect(footer.renderStatusLine()).toBe('');
+    });
+
+    it('returns the set status line', () => {
+      footer.setStatusLine('\x1b[2m┃ ⚡ 2 running\x1b[0m');
+      expect(footer.renderStatusLine()).toBe('\x1b[2m┃ ⚡ 2 running\x1b[0m');
     });
   });
 });

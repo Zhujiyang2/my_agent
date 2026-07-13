@@ -6,8 +6,9 @@ export interface FooterMessage {
 
 export function createFooter() {
   const messages: FooterMessage[] = [];
+  let statusLine: string = '';
   const MAX_MESSAGES = 5;
-  const HINT = '  /exit to quit | Ctrl+C to interrupt | Ctrl+O tasks';
+  const HINT = '  /exit to quit | Ctrl+C to interrupt';
 
   function upsert(msg: FooterMessage): void {
     const idx = messages.findIndex((m) => m.id === msg.id);
@@ -46,17 +47,27 @@ export function createFooter() {
     return '─'.repeat(width);
   }
 
-  /** Total lines in the frame (top sep + bottom content). Used by InputLine to
-   *  calculate cursor-up offset after rendering the full frame. */
+  /** Optional status line rendered above the top separator (task indicator).
+   *  Returns empty string when no status. */
+  function renderStatusLine(): string {
+    return statusLine;
+  }
+
+  /** Total lines in the frame (statusLine + top sep + bottom content). Used by
+   *  InputLine to calculate cursor-up offset after rendering the full frame. */
   function frameLineCount(): number {
-    // top separator = 1 line
-    // bottom.render() = separator(1) + hint(1) + messages
-    return 1 + 1 + 1 + messages.length;
+    // statusLine (may be multi-line) + top separator(1) + bottom.render()
+    const slCount = statusLine ? statusLine.split('\n').length : 0;
+    return slCount + 1 + 1 + 1 + messages.length;
   }
 
   function clear(): void {
     messages.length = 0;
   }
 
-  return { upsert, remove, render, renderSeparator, clear, frameLineCount };
+  function setStatusLine(line: string): void {
+    statusLine = line;
+  }
+
+  return { upsert, remove, render, renderSeparator, renderStatusLine, clear, frameLineCount, setStatusLine };
 }
