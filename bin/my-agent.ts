@@ -317,8 +317,9 @@ async function main(): Promise<void> {
     // Prevents confirmation keystrokes from being replayed as agent input.
     if (confirming) return;
 
-    // Enter: submit input
+    // Enter: submit input (ignore empty lines)
     if (key.name === 'return' || key.name === 'enter') {
+      if (inputLine.getLine().trim().length === 0) return;
       handleSubmit();
       return;
     }
